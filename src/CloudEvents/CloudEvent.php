@@ -1,6 +1,6 @@
 <?php
 
-namespace Utopia\Event;
+namespace Utopia\CloudEvents;
 
 use InvalidArgumentException;
 

@@ -1,10 +1,10 @@
 <?php
 
-namespace Tests\Unit\Event;
+namespace Tests\Unit\CloudEvents;
 
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
-use Utopia\Event\CloudEvent;
+use Utopia\CloudEvents\CloudEvent;
 
 class CloudEventTest extends TestCase
 {

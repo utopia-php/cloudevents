@@ -1,18 +1,18 @@
-# Utopia Events
+# Utopia CloudEvents
 
-[![Tests](https://github.com/utopia-php/events/actions/workflows/tests.yml/badge.svg)](https://github.com/utopia-php/events/actions/workflows/tests.yml)
-[![Packagist Version](https://img.shields.io/packagist/v/utopia-php/events.svg)](https://packagist.org/packages/utopia-php/events)
-![Packagist Downloads](https://img.shields.io/packagist/dt/utopia-php/events.svg)
+[![Tests](https://github.com/utopia-php/cloudevents/actions/workflows/tests.yml/badge.svg)](https://github.com/utopia-php/cloudevents/actions/workflows/tests.yml)
+[![Packagist Version](https://img.shields.io/packagist/v/utopia-php/cloudevents.svg)](https://packagist.org/packages/utopia-php/cloudevents)
+![Packagist Downloads](https://img.shields.io/packagist/dt/utopia-php/cloudevents.svg)
 [![Discord](https://img.shields.io/discord/564160730845151244)](https://appwrite.io/discord)
 
-Utopia Events is a modern PHP 8.3 implementation of the CloudEvents v1.0 specification. It provides a simple, type-safe way to work with CloudEvents in your PHP applications.
+Utopia CloudEvents is a modern PHP 8.3 implementation of the CloudEvents v1.0 specification. It provides a simple, type-safe way to work with CloudEvents in your PHP applications.
 
 Although part of the [Utopia Framework](https://github.com/utopia-php/framework) family, the library is framework-agnostic and can be used in any PHP project.
 
 ## Installation
 
 ```bash
-composer require utopia-php/events
+composer require utopia-php/cloudevents
 ```
 
 The library requires PHP 8.3+.
@@ -32,7 +32,7 @@ Learn more at the [CloudEvents specification](https://github.com/cloudevents/spe
 
 require __DIR__ . '/vendor/autoload.php';
 
-use Utopia\Event\CloudEvent;
+use Utopia\CloudEvents\CloudEvent;
 
 $event = new CloudEvent(
     specversion: '1.0',
@@ -106,7 +106,7 @@ The `CloudEvent` class supports the following properties according to the CloudE
 - **Event-Driven Architecture**: Standardize event formats across microservices
 - **Message Queues**: Send CloudEvents via RabbitMQ, Kafka, or other message brokers
 - **Webhooks**: Deliver CloudEvents to external systems
-- **Event Sourcing**: Store events in a standardized format
+- **Event Sourcing**: Store cloudevents in a standardized format
 - **Serverless Functions**: Trigger functions with CloudEvents
 
 ## Development

@@ -1,8 +1,8 @@
 {
-    "name": "utopia-php/events",
+    "name": "utopia-php/cloudevents",
     "description": "Lite & fast micro PHP CloudEvents implementation that is **easy to use**.",
     "type": "library",
-    "keywords": ["php","framework", "upf", "utopia", "events", "cloudevents"],
+    "keywords": ["php","framework", "upf", "utopia", "cloudevents"],
     "license": "MIT",
     "minimum-stability": "stable",
     "scripts": {
@@ -18,7 +18,7 @@
         }
     ],
     "autoload": {
-        "psr-4": {"Utopia\\Event\\": "src/Event"}
+        "psr-4": {"Utopia\\CloudEvents\\": "src/CloudEvents"}
     },
     "require": {
         "php": ">=8.3"
