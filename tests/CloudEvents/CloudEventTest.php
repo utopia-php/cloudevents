@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Unit\CloudEvents;
+namespace Tests\CloudEvents;
 
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
