@@ -1,0 +1,248 @@
+<?php
+
+namespace Tests\Unit\Event;
+
+use InvalidArgumentException;
+use PHPUnit\Framework\TestCase;
+use Utopia\Event\CloudEvent;
+
+class CloudEventTest extends TestCase
+{
+    public function testConstructor(): void
+    {
+        $event = new CloudEvent(
+            specversion: '1.0',
+            type: 'test.event',
+            source: 'test-service',
+            subject: 'test-subject',
+            id: 'test-id-123',
+            time: '2025-11-07T10:00:00Z',
+            datacontenttype: 'application/json',
+            data: ['key' => 'value']
+        );
+
+        $this->assertEquals('1.0', $event->specversion);
+        $this->assertEquals('test.event', $event->type);
+        $this->assertEquals('test-service', $event->source);
+        $this->assertEquals('test-subject', $event->subject);
+        $this->assertEquals('test-id-123', $event->id);
+        $this->assertEquals('2025-11-07T10:00:00Z', $event->time);
+        $this->assertEquals('application/json', $event->datacontenttype);
+        $this->assertEquals(['key' => 'value'], $event->data);
+    }
+
+    public function testConstructorWithDefaults(): void
+    {
+        $event = new CloudEvent();
+
+        $this->assertEquals('1.0', $event->specversion);
+        $this->assertEquals('', $event->type);
+        $this->assertEquals('', $event->source);
+        $this->assertNull($event->subject);
+        $this->assertEquals('', $event->id);
+        $this->assertEquals('', $event->time);
+        $this->assertEquals('application/json', $event->datacontenttype);
+        $this->assertEquals([], $event->data);
+    }
+
+    public function testFromArray(): void
+    {
+        $data = [
+            'specversion' => '1.0',
+            'type' => 'user.created',
+            'source' => 'user-service',
+            'subject' => 'user-123',
+            'id' => 'event-456',
+            'time' => '2025-11-07T10:00:00Z',
+            'datacontenttype' => 'application/json',
+            'data' => ['userId' => '123', 'email' => 'test@example.com']
+        ];
+
+        $event = CloudEvent::fromArray($data);
+
+        $this->assertEquals('1.0', $event->specversion);
+        $this->assertEquals('user.created', $event->type);
+        $this->assertEquals('user-service', $event->source);
+        $this->assertEquals('user-123', $event->subject);
+        $this->assertEquals('event-456', $event->id);
+        $this->assertEquals('2025-11-07T10:00:00Z', $event->time);
+        $this->assertEquals('application/json', $event->datacontenttype);
+        $this->assertEquals(['userId' => '123', 'email' => 'test@example.com'], $event->data);
+    }
+
+    public function testFromArrayWithMissingOptionalFields(): void
+    {
+        $data = [
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'time' => '2025-11-07T10:00:00Z'
+        ];
+
+        $event = CloudEvent::fromArray($data);
+
+        $this->assertNull($event->subject);
+        $this->assertEquals('application/json', $event->datacontenttype);
+        $this->assertEquals([], $event->data);
+    }
+
+    public function testFromArrayMissingSpecversion(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Missing required field: specversion');
+
+        CloudEvent::fromArray([
+            'type' => 'test.event',
+            'source' => 'test-service'
+        ]);
+    }
+
+    public function testFromArrayInvalidSpecversion(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unsupported CloudEvents spec version: 2.0');
+
+        CloudEvent::fromArray([
+            'specversion' => '2.0',
+            'type' => 'test.event',
+            'source' => 'test-service'
+        ]);
+    }
+
+    public function testFromArrayMissingType(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Missing required field: type');
+
+        CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'source' => 'test-service'
+        ]);
+    }
+
+    public function testFromArrayEmptyType(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Missing required field: type');
+
+        CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => '',
+            'source' => 'test-service'
+        ]);
+    }
+
+    public function testToArray(): void
+    {
+        $event = new CloudEvent(
+            specversion: '1.0',
+            type: 'order.placed',
+            source: 'order-service',
+            subject: 'order-789',
+            id: 'event-abc',
+            time: '2025-11-07T10:00:00Z',
+            datacontenttype: 'application/json',
+            data: ['orderId' => '789', 'amount' => 99.99]
+        );
+
+        $array = $event->toArray();
+
+        $this->assertEquals([
+            'specversion' => '1.0',
+            'type' => 'order.placed',
+            'source' => 'order-service',
+            'subject' => 'order-789',
+            'id' => 'event-abc',
+            'time' => '2025-11-07T10:00:00Z',
+            'datacontenttype' => 'application/json',
+            'data' => ['orderId' => '789', 'amount' => 99.99]
+        ], $array);
+    }
+
+    public function testToArrayWithNullSubject(): void
+    {
+        $event = new CloudEvent(
+            specversion: '1.0',
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            time: '2025-11-07T10:00:00Z'
+        );
+
+        $array = $event->toArray();
+
+        $this->assertNull($array['subject']);
+    }
+
+    public function testValidate(): void
+    {
+        $event = new CloudEvent(
+            specversion: '1.0',
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            time: '2025-11-07T10:00:00Z'
+        );
+
+        $this->assertTrue($event->validate());
+    }
+
+    public function testValidateInvalidSpecversion(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unsupported CloudEvents spec version: 2.0');
+
+        $event = new CloudEvent(
+            specversion: '2.0',
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            time: '2025-11-07T10:00:00Z'
+        );
+
+        $event->validate();
+    }
+
+    public function testValidateEmptyType(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Event type is required');
+
+        $event = new CloudEvent(
+            specversion: '1.0',
+            type: '',
+            source: 'test-service',
+            id: 'test-id',
+            time: '2025-11-07T10:00:00Z'
+        );
+
+        $event->validate();
+    }
+
+    public function testRoundTrip(): void
+    {
+        $original = new CloudEvent(
+            specversion: '1.0',
+            type: 'payment.processed',
+            source: 'payment-service',
+            subject: 'payment-xyz',
+            id: 'event-123',
+            time: '2025-11-07T10:00:00Z',
+            datacontenttype: 'application/json',
+            data: ['paymentId' => 'xyz', 'status' => 'completed']
+        );
+
+        $array = $original->toArray();
+        $restored = CloudEvent::fromArray($array);
+
+        $this->assertEquals($original->specversion, $restored->specversion);
+        $this->assertEquals($original->type, $restored->type);
+        $this->assertEquals($original->source, $restored->source);
+        $this->assertEquals($original->subject, $restored->subject);
+        $this->assertEquals($original->id, $restored->id);
+        $this->assertEquals($original->time, $restored->time);
+        $this->assertEquals($original->datacontenttype, $restored->datacontenttype);
+        $this->assertEquals($original->data, $restored->data);
+    }
+}
