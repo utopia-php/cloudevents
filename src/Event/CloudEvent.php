@@ -20,7 +20,7 @@ class CloudEvent
      * @param string $id Unique event identifier
      * @param string $time Event timestamp in RFC3339 format
      * @param string $datacontenttype Content type of data (default: "application/json")
-     * @param array $data Event data payload
+     * @param array<string, mixed> $data Event data payload
      */
     public function __construct(
         public readonly string $specversion = '1.0',
@@ -37,7 +37,7 @@ class CloudEvent
     /**
      * Create CloudEvent from array
      *
-     * @param array $array
+     * @param array<string, mixed> $array
      * @return self
      * @throws InvalidArgumentException
      */
@@ -70,7 +70,7 @@ class CloudEvent
     /**
      * Convert CloudEvent to array
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function toArray(): array
     {
