@@ -133,9 +133,10 @@ and `source` — call `validate()` for a full conformance check.
 ### Validating a CloudEvent
 
 `validate()` enforces the four REQUIRED context attributes: `id`, `source`,
-`specversion` and `type`. `source` must also be a syntactically valid
-URI-reference, so a relative reference such as `user-service` or `/services/db`
-passes, while one containing an unescaped space does not.
+`specversion` and `type`. `source` is additionally checked against the RFC 3986
+URI-reference grammar, so a relative reference such as `user-service` or
+`/services/db` passes, while `my service` (unescaped space) and
+`http://[invalid]` (malformed authority) do not.
 
 ```php
 use Utopia\CloudEvents\Exception as CloudEventException;

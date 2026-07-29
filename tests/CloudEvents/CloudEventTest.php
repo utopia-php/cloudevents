@@ -355,6 +355,12 @@ class CloudEventTest extends TestCase
             'urn' => ['urn:uuid:6e8bc430-9c3a-11d9-9669-0800200c9a66'],
             'percent encoded' => ['/services/my%20service'],
             'query and fragment' => ['/services/db?tenant=1#events'],
+            'network path reference' => ['//example.com/path'],
+            'userinfo and port' => ['http://user:pw@example.com:8080/a/b?q=1#f'],
+            'ipv4 host' => ['http://192.168.0.1/events'],
+            'ipv6 literal' => ['http://[2001:db8::1]:8080/events'],
+            'ipvfuture literal' => ['http://[v7.fe80::a+en1]/events'],
+            'mailto' => ['mailto:events@example.com'],
         ];
     }
 
@@ -378,6 +384,12 @@ class CloudEventTest extends TestCase
             'truncated percent escape' => ['/services/my%2'],
             'invalid percent escape' => ['/services/my%zz'],
             'angle brackets' => ['<test-service>'],
+            'trailing newline' => ["test-service\n"],
+            // Structurally malformed, even though every character is allowed
+            'malformed ip literal' => ['http://[invalid]'],
+            'unterminated ip literal' => ['http://[fe80::1'],
+            'ipv4 in brackets' => ['http://[192.168.0.1]'],
+            'brackets outside authority' => ['/services/[db]'],
         ];
     }
 
@@ -652,6 +664,29 @@ class CloudEventTest extends TestCase
         $this->expectExceptionMessage('Invalid extension attribute name: trace_parent');
 
         (new CloudEvent())->withExtension('trace_parent', 'x');
+    }
+
+    public function testWithExtensionPreservesNumericName(): void
+    {
+        $event = (new CloudEvent(type: 'test.event', source: 'test-service', id: 'test-id'))
+            ->withExtension('123', 'x')
+            ->withExtension('traceparent', '00-abc-def-01');
+
+        $this->assertEquals(['123' => 'x', 'traceparent' => '00-abc-def-01'], $event->getExtensions());
+        $this->assertEquals('x', $event->getExtension('123'));
+
+        $array = $event->toArray();
+
+        $this->assertArrayNotHasKey(0, $array);
+        $this->assertStringContainsString('"123":"x"', (string) json_encode($array));
+        $this->assertEquals($event->getExtensions(), CloudEvent::fromArray($array)->getExtensions());
+    }
+
+    public function testWithExtensionOverwritesExistingValue(): void
+    {
+        $event = (new CloudEvent(extensions: ['retrycount' => 1]))->withExtension('retrycount', 2);
+
+        $this->assertEquals(['retrycount' => 2], $event->getExtensions());
     }
 
     public function testWithExtensionKeepsExistingExtensions(): void

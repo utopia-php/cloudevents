@@ -317,7 +317,9 @@ class CloudEvent
      */
     public function withExtension(string $name, mixed $value): self
     {
-        return $this->with(extensions: array_merge($this->extensions, [$name => $value]));
+        // array_replace() rather than array_merge(), which would renumber a
+        // digits-only name that PHP has cast to an int key
+        return $this->with(extensions: array_replace($this->extensions, [$name => $value]));
     }
 
     /**
@@ -431,17 +433,80 @@ class CloudEvent
     /**
      * Check whether a string is a syntactically valid RFC 3986 URI-reference
      *
-     * A URI-reference is either a URI or a relative reference, so "/services/db" and
-     * "user-service" are both fine. What it may not contain is a character outside
-     * the unreserved and reserved sets — a space, a control character or a raw
-     * non-ASCII byte must be percent-encoded — or a malformed percent-escape.
+     * A URI-reference is either a URI or a relative reference, so "/services/db"
+     * and "user-service" are both fine, while "my service" and "http://[invalid]"
+     * are not. The check follows the RFC 3986 grammar rather than only screening
+     * characters, so a structurally malformed authority is rejected too.
+     *
+     * @see https://www.rfc-editor.org/rfc/rfc3986#appendix-A
      */
     private static function isUriReference(string $value): bool
     {
-        if (preg_match('/^[A-Za-z0-9\-._~:\/?#\[\]@!$&\'()*+,;=%]*$/', $value) !== 1) {
+        if (preg_match(self::uriReferencePattern(), $value) !== 1) {
             return false;
         }
 
-        return preg_match('/%(?![0-9A-Fa-f]{2})/', $value) === 0;
+        // Square brackets are only legal as the delimiters of an IP-literal host,
+        // so anything the grammar matched between them must be an IPv6 address or
+        // an IPvFuture literal.
+        if (preg_match_all('/\[([^\]]*)\]/', $value, $matches) === 0) {
+            return true;
+        }
+
+        foreach ($matches[1] as $literal) {
+            $isIpV6 = filter_var($literal, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
+            $isIpVFuture = preg_match('/\Av[0-9A-Fa-f]++\.[A-Za-z0-9\-._~!$&\'()*+,;=:]++\z/', $literal) === 1;
+
+            if (!$isIpV6 && !$isIpVFuture) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Build the RFC 3986 URI-reference pattern
+     *
+     * Composed from the ABNF in appendix A, with the IP-literal left loose because
+     * isUriReference() validates its contents separately. Every repetition is
+     * possessive: the character sets of adjacent rules are disjoint, so no
+     * backtracking is ever useful, and a hostile `source` cannot make this pattern
+     * blow up.
+     */
+    private static function uriReferencePattern(): string
+    {
+        $unreserved = 'A-Za-z0-9\-._~';
+        $subDelims = '!$&\'()*+,;=';
+        $pctEncoded = '%[0-9A-Fa-f]{2}';
+
+        $pchar = "(?:[{$unreserved}{$subDelims}:@]|{$pctEncoded})";
+        $segment = "{$pchar}*+";
+        $segmentNz = "{$pchar}++";
+        // The first segment of a path-noscheme may not contain a colon, which would
+        // otherwise read as a scheme delimiter
+        $segmentNzNc = "(?:[{$unreserved}{$subDelims}@]|{$pctEncoded})++";
+
+        $scheme = '[A-Za-z][A-Za-z0-9+\-.]*+';
+        $userinfo = "(?:[{$unreserved}{$subDelims}:]|{$pctEncoded})*+";
+        $host = "(?:\[[^\]]*+\]|(?:[{$unreserved}{$subDelims}]|{$pctEncoded})*+)";
+        $authority = "(?:{$userinfo}@)?{$host}(?::[0-9]*+)?";
+
+        $pathAbempty = "(?:\/{$segment})*+";
+        $pathAbsolute = "\/(?:{$segmentNz}(?:\/{$segment})*+)?";
+        $pathRootless = "{$segmentNz}(?:\/{$segment})*+";
+        $pathNoscheme = "{$segmentNzNc}(?:\/{$segment})*+";
+
+        $hierPart = "(?:\/\/{$authority}{$pathAbempty}|{$pathAbsolute}|{$pathRootless}|)";
+        $relativePart = "(?:\/\/{$authority}{$pathAbempty}|{$pathAbsolute}|{$pathNoscheme}|)";
+
+        $queryOrFragment = "(?:{$pchar}|[\/?])*+";
+        $suffix = "(?:\?{$queryOrFragment})?(?:#{$queryOrFragment})?";
+
+        $uri = "{$scheme}:{$hierPart}{$suffix}";
+        $relativeRef = "{$relativePart}{$suffix}";
+
+        // \A and \z rather than ^ and $, which would let a trailing newline through
+        return "/\A(?:{$uri}|{$relativeRef})\z/";
     }
 }
