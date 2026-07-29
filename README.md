@@ -133,7 +133,9 @@ and `source` — call `validate()` for a full conformance check.
 ### Validating a CloudEvent
 
 `validate()` enforces the four REQUIRED context attributes: `id`, `source`,
-`specversion` and `type`.
+`specversion` and `type`. `source` must also be a syntactically valid
+URI-reference, so a relative reference such as `user-service` or `/services/db`
+passes, while one containing an unescaped space does not.
 
 ```php
 use Utopia\CloudEvents\Exception as CloudEventException;
@@ -167,7 +169,9 @@ The `CloudEvent` class supports the following properties according to the CloudE
 
 An event may carry any number of extension context attributes, such as
 `traceparent`. Names are restricted by the spec to lowercase `a-z` and `0-9`, and
-values must be scalar; anything else raises in strict mode.
+values must be a string, integer or boolean — the CloudEvents type system has no
+floating-point type, and its Binary, URI and Timestamp types all serialize as
+strings. Anything else raises in strict mode, and is dropped in lenient mode.
 
 ```php
 $event = $event->withExtension('traceparent', $trace);

@@ -48,7 +48,10 @@ class CloudEvent
     /**
      * Extension context attributes, keyed by attribute name.
      *
-     * @var array<string, string|int|float|bool>
+     * A digits-only name such as "123" is legal, and PHP stores it as an int key,
+     * which is why the key type here is array-key rather than string.
+     *
+     * @var array<array-key, string|int|bool>
      */
     public readonly array $extensions;
 
@@ -107,7 +110,8 @@ class CloudEvent
      *  - `specversion` is missing, or is not the string "1.0";
      *  - `type` is missing, empty, or not a string;
      *  - any other spec attribute is present with a non-string value;
-     *  - an extension attribute has an invalid name or a non-scalar value.
+     *  - an extension attribute has an invalid name, or a value that is not a
+     *    string, integer or boolean.
      *
      * Lenient mode ($lenient = true) raises an Exception only for the `specversion`
      * and `type` failures above; it never invents a required attribute. Every other
@@ -188,11 +192,13 @@ class CloudEvent
      * JSON format treats as equivalent to omitting the member. Extension attributes
      * are emitted as top-level members alongside them.
      *
-     * @return array<string, mixed>
+     * @return array<array-key, mixed>
      */
     public function toArray(): array
     {
-        return array_merge([
+        // The union operator rather than array_merge(), which would renumber a
+        // digits-only extension name such as "123" that PHP has cast to an int key.
+        return [
             'specversion' => $this->specversion,
             'type' => $this->type,
             'source' => $this->source,
@@ -202,7 +208,7 @@ class CloudEvent
             'datacontenttype' => $this->datacontenttype,
             'dataschema' => $this->dataschema,
             'data' => $this->data,
-        ], $this->extensions);
+        ] + $this->extensions;
     }
 
     /**
@@ -232,15 +238,19 @@ class CloudEvent
             throw new Exception('Event source is required');
         }
 
+        if (!self::isUriReference($this->source)) {
+            throw new Exception('Event source must be a valid URI-reference');
+        }
+
         return true;
     }
 
     /**
      * Get a single extension attribute
      *
-     * @return string|int|float|bool|null The $default when the attribute is not set
+     * @return string|int|bool|null The $default when the attribute is not set
      */
-    public function getExtension(string $name, string|int|float|bool|null $default = null): string|int|float|bool|null
+    public function getExtension(string $name, string|int|bool|null $default = null): string|int|bool|null
     {
         return $this->extensions[$name] ?? $default;
     }
@@ -248,7 +258,7 @@ class CloudEvent
     /**
      * Get all extension attributes, keyed by attribute name
      *
-     * @return array<string, string|int|float|bool>
+     * @return array<array-key, string|int|bool>
      */
     public function getExtensions(): array
     {
@@ -301,7 +311,7 @@ class CloudEvent
      * Return a copy with the given extension attribute set
      *
      * @param  string  $name  Lowercase a-z and 0-9 only, and not a spec attribute name
-     * @param  string|int|float|bool|null  $value  A null value unsets the attribute
+     * @param  string|int|bool|null  $value  A null value unsets the attribute
      *
      * @throws Exception on an invalid extension attribute name or value
      */
@@ -374,12 +384,14 @@ class CloudEvent
     /**
      * Validate extension attribute names and values
      *
-     * Names are restricted to lowercase a-z and 0-9 by the spec, and values must be
-     * of a CloudEvents type, all of which map to a JSON scalar. An attribute whose
-     * value is null is treated as unset.
+     * Names are restricted to lowercase a-z and 0-9 by the spec. Values must be of a
+     * CloudEvents type; the type system has no floating-point type, and Binary, URI,
+     * URI-reference and Timestamp all serialize as strings, so what remains in JSON
+     * is a string, an integer or a boolean. An attribute whose value is null is
+     * treated as unset.
      *
      * @param  array<array-key, mixed>  $extensions
-     * @return array<string, string|int|float|bool>
+     * @return array<array-key, string|int|bool>
      *
      * @throws Exception when an attribute is invalid and $lenient is false
      */
@@ -402,17 +414,34 @@ class CloudEvent
                 throw new Exception('Invalid extension attribute name: '.$name);
             }
 
-            if (!is_string($value) && !is_int($value) && !is_float($value) && !is_bool($value)) {
+            if (!is_string($value) && !is_int($value) && !is_bool($value)) {
                 if ($lenient) {
                     continue;
                 }
 
-                throw new Exception('Invalid extension attribute value for "'.$name.'": must be a string, integer, float or boolean');
+                throw new Exception('Invalid extension attribute value for "'.$name.'": must be a string, integer or boolean');
             }
 
             $filtered[$name] = $value;
         }
 
         return $filtered;
+    }
+
+    /**
+     * Check whether a string is a syntactically valid RFC 3986 URI-reference
+     *
+     * A URI-reference is either a URI or a relative reference, so "/services/db" and
+     * "user-service" are both fine. What it may not contain is a character outside
+     * the unreserved and reserved sets — a space, a control character or a raw
+     * non-ASCII byte must be percent-encoded — or a malformed percent-escape.
+     */
+    private static function isUriReference(string $value): bool
+    {
+        if (preg_match('/^[A-Za-z0-9\-._~:\/?#\[\]@!$&\'()*+,;=%]*$/', $value) !== 1) {
+            return false;
+        }
+
+        return preg_match('/%(?![0-9A-Fa-f]{2})/', $value) === 0;
     }
 }

@@ -343,6 +343,53 @@ class CloudEventTest extends TestCase
         $event->validate();
     }
 
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function validSourceProvider(): array
+    {
+        return [
+            'relative path' => ['/services/db'],
+            'relative reference' => ['user-service'],
+            'absolute uri' => ['https://github.com/cloudevents/spec/pull/123'],
+            'urn' => ['urn:uuid:6e8bc430-9c3a-11d9-9669-0800200c9a66'],
+            'percent encoded' => ['/services/my%20service'],
+            'query and fragment' => ['/services/db?tenant=1#events'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('validSourceProvider')]
+    public function testValidateAcceptsUriReferenceSource(string $source): void
+    {
+        $event = new CloudEvent(type: 'test.event', source: $source, id: 'test-id');
+
+        $this->assertTrue($event->validate());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function invalidSourceProvider(): array
+    {
+        return [
+            'unescaped space' => ['my service'],
+            'control character' => ["test\nservice"],
+            'raw non-ascii' => ['/services/café'],
+            'truncated percent escape' => ['/services/my%2'],
+            'invalid percent escape' => ['/services/my%zz'],
+            'angle brackets' => ['<test-service>'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidSourceProvider')]
+    public function testValidateRejectsMalformedSource(string $source): void
+    {
+        $this->expectException(CloudEventException::class);
+        $this->expectExceptionMessage('Event source must be a valid URI-reference');
+
+        (new CloudEvent(type: 'test.event', source: $source, id: 'test-id'))->validate();
+    }
+
     public function testValidateAcceptsAllFourRequiredAttributes(): void
     {
         $event = new CloudEvent(
@@ -462,12 +509,59 @@ class CloudEventTest extends TestCase
         new CloudEvent(extensions: ['type' => 'x']);
     }
 
-    public function testExtensionValueMustBeScalar(): void
+    public function testExtensionValueMustBeStringIntegerOrBoolean(): void
     {
         $this->expectException(CloudEventException::class);
-        $this->expectExceptionMessage('Invalid extension attribute value for "trace"');
+        $this->expectExceptionMessage('Invalid extension attribute value for "trace": must be a string, integer or boolean');
 
         new CloudEvent(extensions: ['trace' => ['nested' => 'value']]);
+    }
+
+    public function testFloatExtensionValueIsRejected(): void
+    {
+        // The CloudEvents type system has no floating-point type
+        $this->expectException(CloudEventException::class);
+        $this->expectExceptionMessage('Invalid extension attribute value for "sampling": must be a string, integer or boolean');
+
+        new CloudEvent(extensions: ['sampling' => 0.5]);
+    }
+
+    public function testFloatExtensionValueIsDroppedWhenLenient(): void
+    {
+        $event = CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'sampling' => 0.5,
+            'traceparent' => '00-abc-def-01',
+        ], lenient: true);
+
+        $this->assertEquals(['traceparent' => '00-abc-def-01'], $event->getExtensions());
+    }
+
+    public function testNumericExtensionNameRoundTripsLosslessly(): void
+    {
+        // PHP casts a digits-only key to an int, which array_merge() would renumber
+        $original = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            extensions: ['123' => 'x', 'traceparent' => '00-abc-def-01']
+        );
+
+        $array = $original->toArray();
+
+        $this->assertArrayHasKey('123', $array);
+        $this->assertEquals('x', $array['123'] ?? null);
+        $this->assertArrayNotHasKey(0, $array);
+        $this->assertStringContainsString('"123":"x"', (string) json_encode($array));
+
+        $restored = CloudEvent::fromArray($array);
+
+        $this->assertEquals($original->getExtensions(), $restored->getExtensions());
+        $this->assertEquals('x', $restored->getExtension('123'));
+        $this->assertEquals($array, $restored->toArray());
     }
 
     public function testNullExtensionValueIsTreatedAsUnset(): void
