@@ -653,7 +653,15 @@ class CloudEventTest extends TestCase
 
     public function testValidateRejectsInvalidDatacontenttype(): void
     {
-        $invalid = ['json', 'text/plain;', 'text/plain; charset=', 'text/plain;;', 'text/plain; =utf-8'];
+        $invalid = [
+            'json',
+            'text/plain;',
+            'text/plain; charset=',
+            'text/plain;;',
+            'text/plain; =utf-8',
+            "text/plain; charset=\"bad\nvalue\"",
+            "text/plain; charset=\"nul\x00byte\"",
+        ];
 
         foreach ($invalid as $type) {
             $event = new CloudEvent(
@@ -674,19 +682,30 @@ class CloudEventTest extends TestCase
 
     public function testValidateAcceptsQuotedMediaTypeParameter(): void
     {
-        $event = new CloudEvent(
-            type: 'test.event',
-            source: 'test-service',
-            id: 'test-id',
-            datacontenttype: 'text/plain; charset="utf 8"'
-        );
+        $valid = ['text/plain; charset="utf 8"', 'text/plain; charset="say \"hi\""'];
 
-        $this->assertTrue($event->validate());
+        foreach ($valid as $type) {
+            $event = new CloudEvent(
+                type: 'test.event',
+                source: 'test-service',
+                id: 'test-id',
+                datacontenttype: $type
+            );
+
+            $this->assertTrue($event->validate(), 'Expected valid media type: ' . $type);
+        }
     }
 
     public function testValidateRejectsMalformedUriStructure(): void
     {
-        $invalid = ['http://[invalid', 'http://exa mple.com', '://missing-scheme'];
+        $invalid = [
+            'http://[invalid',
+            'http://exa mple.com',
+            '://missing-scheme',
+            'http://[::1::]/path',
+            'http://[....]/schema',
+            'http://[gggg::1]/',
+        ];
 
         foreach ($invalid as $source) {
             $event = new CloudEvent(
@@ -708,6 +727,9 @@ class CloudEventTest extends TestCase
     {
         $valid = [
             'http://[2001:db8::1]:8080/path?q=1#frag',
+            'http://[::1]/events',
+            'http://[::ffff:192.0.2.1]/events',
+            'http://[v1.fe80::a+en1]/events',
             'mailto:events@example.com',
             'urn:uuid:6e8bc430-9c3a-11d9-9669-0800200c9a66',
             '//example.com/cloudevents',

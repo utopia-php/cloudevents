@@ -366,7 +366,23 @@ class CloudEvent
         $unreservedSub = "A-Za-z0-9\\-._~!$&'()*+,;=";
         $pchar = "(?:[{$unreservedSub}:@]|{$pct})";
         $userinfo = "(?:[{$unreservedSub}:]|{$pct})*";
-        $ipLiteral = '\[[0-9A-Fa-f:.]+\]';
+        $h16 = '[0-9A-Fa-f]{1,4}';
+        $decOctet = '(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])';
+        $ipv4 = "{$decOctet}(?:\\.{$decOctet}){3}";
+        $ls32 = "(?:{$h16}:{$h16}|{$ipv4})";
+        $ipv6 = '(?:'
+            . "(?:{$h16}:){6}{$ls32}"
+            . "|::(?:{$h16}:){5}{$ls32}"
+            . "|(?:{$h16})?::(?:{$h16}:){4}{$ls32}"
+            . "|(?:(?:{$h16}:)?{$h16})?::(?:{$h16}:){3}{$ls32}"
+            . "|(?:(?:{$h16}:){0,2}{$h16})?::(?:{$h16}:){2}{$ls32}"
+            . "|(?:(?:{$h16}:){0,3}{$h16})?::{$h16}:{$ls32}"
+            . "|(?:(?:{$h16}:){0,4}{$h16})?::{$ls32}"
+            . "|(?:(?:{$h16}:){0,5}{$h16})?::{$h16}"
+            . "|(?:(?:{$h16}:){0,6}{$h16})?::"
+            . ')';
+        $ipvFuture = "[vV][0-9A-Fa-f]+\\.[{$unreservedSub}:]+";
+        $ipLiteral = "\\[(?:{$ipv6}|{$ipvFuture})\\]";
         $regName = "(?:[{$unreservedSub}]|{$pct})*";
         $authority = "(?:{$userinfo}@)?(?:{$ipLiteral}|{$regName})(?::[0-9]*)?";
         $pathAbempty = "(?:/{$pchar}*)*";
@@ -413,7 +429,10 @@ class CloudEvent
     /**
      * Check that a string is an RFC 2046 media type such as
      * "application/json" or "text/plain; charset=utf-8", with every
-     * parameter a token=token or token=quoted-string pair
+     * parameter a token=token or token=quoted-string pair. Quoted
+     * strings may contain tab, space and visible characters, with
+     * backslash escapes for '"' and '\', but no other control
+     * characters.
      *
      * @param string $type
      * @return bool
@@ -421,7 +440,9 @@ class CloudEvent
     private static function isValidMediaType(string $type): bool
     {
         $token = "[0-9A-Za-z!#$%&'*+.^_`|~-]+";
-        $value = "(?:{$token}|\"(?:[^\"\\\\]|\\\\.)*\")";
+        $qdtext = '[\t \x21\x23-\x5B\x5D-\x7E]';
+        $quotedPair = '\\\\[\t\x20-\x7E]';
+        $value = "(?:{$token}|\"(?:{$qdtext}|{$quotedPair})*\")";
 
         return \preg_match('{^' . $token . '/' . $token . '(?:\s*;\s*' . $token . '=' . $value . ')*$}', $type) === 1;
     }
