@@ -140,7 +140,7 @@ class CloudEvent
             throw new InvalidArgumentException('Event time must not be empty when present');
         }
 
-        if ($this->datacontenttype === '') {
+        if ($this->datacontenttype !== null && \trim($this->datacontenttype) === '') {
             throw new InvalidArgumentException('Event datacontenttype must not be empty when present');
         }
 
