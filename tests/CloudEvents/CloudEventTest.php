@@ -653,17 +653,78 @@ class CloudEventTest extends TestCase
 
     public function testValidateRejectsInvalidDatacontenttype(): void
     {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Event datacontenttype must be a valid RFC 2046 media type');
+        $invalid = ['json', 'text/plain;', 'text/plain; charset=', 'text/plain;;', 'text/plain; =utf-8'];
 
+        foreach ($invalid as $type) {
+            $event = new CloudEvent(
+                type: 'test.event',
+                source: 'test-service',
+                id: 'test-id',
+                datacontenttype: $type
+            );
+
+            try {
+                $event->validate();
+                $this->fail('Expected InvalidArgumentException for datacontenttype: ' . $type);
+            } catch (InvalidArgumentException $e) {
+                $this->assertStringContainsString('RFC 2046', $e->getMessage());
+            }
+        }
+    }
+
+    public function testValidateAcceptsQuotedMediaTypeParameter(): void
+    {
         $event = new CloudEvent(
             type: 'test.event',
             source: 'test-service',
             id: 'test-id',
-            datacontenttype: 'json'
+            datacontenttype: 'text/plain; charset="utf 8"'
         );
 
-        $event->validate();
+        $this->assertTrue($event->validate());
+    }
+
+    public function testValidateRejectsMalformedUriStructure(): void
+    {
+        $invalid = ['http://[invalid', 'http://exa mple.com', '://missing-scheme'];
+
+        foreach ($invalid as $source) {
+            $event = new CloudEvent(
+                type: 'test.event',
+                source: $source,
+                id: 'test-id'
+            );
+
+            try {
+                $event->validate();
+                $this->fail('Expected InvalidArgumentException for source: ' . $source);
+            } catch (InvalidArgumentException $e) {
+                $this->assertStringContainsString('URI-reference', $e->getMessage());
+            }
+        }
+    }
+
+    public function testValidateAcceptsStructuredUris(): void
+    {
+        $valid = [
+            'http://[2001:db8::1]:8080/path?q=1#frag',
+            'mailto:events@example.com',
+            'urn:uuid:6e8bc430-9c3a-11d9-9669-0800200c9a66',
+            '//example.com/cloudevents',
+            '/cloudevents/spec/pull/123',
+            'user-service',
+            '#fragment-only',
+        ];
+
+        foreach ($valid as $source) {
+            $event = new CloudEvent(
+                type: 'test.event',
+                source: $source,
+                id: 'test-id'
+            );
+
+            $this->assertTrue($event->validate(), 'Expected valid URI-reference: ' . $source);
+        }
     }
 
     public function testValidateRejectsRelativeDataschema(): void

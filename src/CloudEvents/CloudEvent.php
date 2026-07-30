@@ -355,37 +355,65 @@ class CloudEvent
     }
 
     /**
-     * Check that a string only uses characters RFC 3986 allows in a
-     * URI-reference and that every percent sign starts a valid
-     * percent-encoded triplet
+     * Build the RFC 3986 grammar as regex subpatterns for a URI and a
+     * relative reference
+     *
+     * @return array{uri: string, relative: string}
+     */
+    private static function uriGrammar(): array
+    {
+        $pct = '%[0-9A-Fa-f]{2}';
+        $unreservedSub = "A-Za-z0-9\\-._~!$&'()*+,;=";
+        $pchar = "(?:[{$unreservedSub}:@]|{$pct})";
+        $userinfo = "(?:[{$unreservedSub}:]|{$pct})*";
+        $ipLiteral = '\[[0-9A-Fa-f:.]+\]';
+        $regName = "(?:[{$unreservedSub}]|{$pct})*";
+        $authority = "(?:{$userinfo}@)?(?:{$ipLiteral}|{$regName})(?::[0-9]*)?";
+        $pathAbempty = "(?:/{$pchar}*)*";
+        $pathAbsolute = "/(?:{$pchar}+(?:/{$pchar}*)*)?";
+        $pathRootless = "{$pchar}+(?:/{$pchar}*)*";
+        $pathNoscheme = "(?:[{$unreservedSub}@]|{$pct})+(?:/{$pchar}*)*";
+        $queryFragment = "(?:{$pchar}|[/?])*";
+        $scheme = '[A-Za-z][A-Za-z0-9+.\-]*';
+
+        return [
+            'uri' => "{$scheme}:(?://{$authority}{$pathAbempty}|{$pathAbsolute}|{$pathRootless})?(?:\\?{$queryFragment})?(?:#{$queryFragment})?",
+            'relative' => "(?://{$authority}{$pathAbempty}|{$pathAbsolute}|{$pathNoscheme})?(?:\\?{$queryFragment})?(?:#{$queryFragment})?",
+        ];
+    }
+
+    /**
+     * Check that a string matches the RFC 3986 URI-reference grammar
+     * (an absolute URI or a relative reference)
      *
      * @param string $uri
      * @return bool
      */
     private static function isValidUriReference(string $uri): bool
     {
-        if (\preg_match('/^[A-Za-z0-9\-._~:\/?#\[\]@!$&\'()*+,;=%]*$/', $uri) !== 1) {
-            return false;
-        }
+        $grammar = self::uriGrammar();
 
-        return \preg_match('/%(?![0-9A-Fa-f]{2})/', $uri) !== 1;
+        return \preg_match('"^(?:' . $grammar['uri'] . '|' . $grammar['relative'] . ')$"', $uri) === 1;
     }
 
     /**
-     * Check that a string is an absolute URI (has a scheme) with valid
-     * URI characters
+     * Check that a string matches the RFC 3986 URI grammar (absolute,
+     * with a scheme)
      *
      * @param string $uri
      * @return bool
      */
     private static function isValidUri(string $uri): bool
     {
-        return \preg_match('/^[A-Za-z][A-Za-z0-9+.\-]*:/', $uri) === 1 && self::isValidUriReference($uri);
+        $grammar = self::uriGrammar();
+
+        return \preg_match('"^' . $grammar['uri'] . '$"', $uri) === 1;
     }
 
     /**
      * Check that a string is an RFC 2046 media type such as
-     * "application/json" or "text/plain; charset=utf-8"
+     * "application/json" or "text/plain; charset=utf-8", with every
+     * parameter a token=token or token=quoted-string pair
      *
      * @param string $type
      * @return bool
@@ -393,8 +421,9 @@ class CloudEvent
     private static function isValidMediaType(string $type): bool
     {
         $token = "[0-9A-Za-z!#$%&'*+.^_`|~-]+";
+        $value = "(?:{$token}|\"(?:[^\"\\\\]|\\\\.)*\")";
 
-        return \preg_match('{^' . $token . '/' . $token . '(\s*;.*)?$}', $type) === 1;
+        return \preg_match('{^' . $token . '/' . $token . '(?:\s*;\s*' . $token . '=' . $value . ')*$}', $type) === 1;
     }
 
     /**
