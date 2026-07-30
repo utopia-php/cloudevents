@@ -431,6 +431,25 @@ class CloudEventTest extends TestCase
         $this->assertTrue($event->validate());
     }
 
+    public function testNow(): void
+    {
+        $time = CloudEvent::now();
+
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/', $time);
+    }
+
+    public function testNowIsValidEventTime(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            time: CloudEvent::now()
+        );
+
+        $this->assertTrue($event->validate());
+    }
+
     public function testExtensions(): void
     {
         $event = new CloudEvent(

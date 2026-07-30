@@ -2,6 +2,8 @@
 
 namespace Utopia\CloudEvents;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use InvalidArgumentException;
 use JsonException;
 
@@ -11,6 +13,14 @@ use JsonException;
  */
 class CloudEvent
 {
+    /**
+     * RFC 3339 (UTC, millisecond precision) format string.
+     *
+     * PHP's DATE_ATOM renders UTC as "+00:00" and carries no sub-second
+     * part, so it is not used here.
+     */
+    public const TIME_FORMAT = 'Y-m-d\TH:i:s.v\Z';
+
     /**
      * Names reserved for core context attributes, which extension
      * attributes must not use.
@@ -53,6 +63,19 @@ class CloudEvent
         public readonly ?string $dataschema = null,
         public readonly array $extensions = []
     ) {
+    }
+
+    /**
+     * Current time as an RFC 3339 UTC timestamp with milliseconds
+     *
+     * Produces e.g. "2025-11-07T10:00:00.123Z", which is what the time
+     * attribute expects.
+     *
+     * @return string
+     */
+    public static function now(): string
+    {
+        return (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format(self::TIME_FORMAT);
     }
 
     /**
