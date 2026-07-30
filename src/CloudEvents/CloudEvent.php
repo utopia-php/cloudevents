@@ -11,6 +11,22 @@ use InvalidArgumentException;
 class CloudEvent
 {
     /**
+     * Names reserved for core context attributes, which extension
+     * attributes must not use.
+     */
+    private const RESERVED_ATTRIBUTES = [
+        'specversion',
+        'type',
+        'source',
+        'id',
+        'subject',
+        'time',
+        'datacontenttype',
+        'dataschema',
+        'data',
+    ];
+
+    /**
      * CloudEvent constructor
      *
      * @param string $type Event type describing the occurrence (e.g., "com.example.user.created")
@@ -22,6 +38,7 @@ class CloudEvent
      * @param string|null $datacontenttype Optional content type of data (RFC 2046, e.g., "application/json")
      * @param string|null $dataschema Optional URI identifying the schema that data adheres to
      * @param mixed $data Optional event payload of any type
+     * @param array<string, mixed> $extensions Extension attributes (lowercase alphanumeric names, boolean/integer/string values)
      */
     public function __construct(
         public readonly string $type,
@@ -32,8 +49,46 @@ class CloudEvent
         public readonly ?string $time = null,
         public readonly ?string $datacontenttype = null,
         public readonly ?string $dataschema = null,
-        public readonly mixed $data = null
+        public readonly mixed $data = null,
+        public readonly array $extensions = []
     ) {
+    }
+
+    /**
+     * Return a copy of the event with the given extension attribute set
+     *
+     * @param string $name
+     * @param bool|int|string $value
+     * @return self
+     * @throws InvalidArgumentException
+     */
+    public function withExtension(string $name, bool|int|string $value): self
+    {
+        self::assertValidExtensionName($name);
+
+        return new self(
+            type: $this->type,
+            source: $this->source,
+            id: $this->id,
+            specversion: $this->specversion,
+            subject: $this->subject,
+            time: $this->time,
+            datacontenttype: $this->datacontenttype,
+            dataschema: $this->dataschema,
+            data: $this->data,
+            extensions: \array_merge($this->extensions, [$name => $value])
+        );
+    }
+
+    /**
+     * Get an extension attribute value, or null when not set
+     *
+     * @param string $name
+     * @return mixed
+     */
+    public function getExtension(string $name): mixed
+    {
+        return $this->extensions[$name] ?? null;
     }
 
     /**
@@ -64,7 +119,8 @@ class CloudEvent
             time: $array['time'] ?? null,
             datacontenttype: $array['datacontenttype'] ?? null,
             dataschema: $array['dataschema'] ?? null,
-            data: $array['data'] ?? null
+            data: $array['data'] ?? null,
+            extensions: \array_diff_key($array, \array_flip(self::RESERVED_ATTRIBUTES))
         );
     }
 
@@ -105,7 +161,7 @@ class CloudEvent
             $array['data'] = $this->data;
         }
 
-        return $array;
+        return $array + $this->extensions;
     }
 
     /**
@@ -148,6 +204,32 @@ class CloudEvent
             throw new InvalidArgumentException('Event dataschema must not be empty when present');
         }
 
+        foreach ($this->extensions as $name => $value) {
+            self::assertValidExtensionName((string) $name);
+
+            if (!\is_bool($value) && !\is_int($value) && !\is_string($value)) {
+                throw new InvalidArgumentException('Extension attribute "' . $name . '" must be a boolean, integer or string');
+            }
+        }
+
         return true;
+    }
+
+    /**
+     * Assert that a name is a valid, non-reserved extension attribute name
+     *
+     * @param string $name
+     * @return void
+     * @throws InvalidArgumentException
+     */
+    private static function assertValidExtensionName(string $name): void
+    {
+        if (!\preg_match('/^[a-z0-9]+$/', $name)) {
+            throw new InvalidArgumentException('Extension attribute name must contain only lowercase letters and digits: ' . $name);
+        }
+
+        if (\in_array($name, self::RESERVED_ATTRIBUTES, true)) {
+            throw new InvalidArgumentException('Extension attribute name conflicts with a core attribute: ' . $name);
+        }
     }
 }
