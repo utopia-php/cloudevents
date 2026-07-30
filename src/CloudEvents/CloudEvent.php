@@ -147,7 +147,9 @@ class CloudEvent
      * Create CloudEvent from its JSON event format representation
      *
      * Binary payloads carried in the data_base64 member are decoded
-     * into data.
+     * into data. JSON objects inside data are decoded as stdClass so
+     * that object and array payloads keep their JSON type when
+     * re-encoded (e.g., an empty object stays {} instead of []).
      *
      * @see https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/formats/json-format.md
      *
@@ -158,14 +160,16 @@ class CloudEvent
     public static function fromJson(string $json): self
     {
         try {
-            $decoded = \json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+            $raw = \json_decode($json, false, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException $e) {
             throw new InvalidArgumentException('Invalid CloudEvent JSON: ' . $e->getMessage(), 0, $e);
         }
 
-        if (!\is_array($decoded)) {
+        if (!$raw instanceof \stdClass) {
             throw new InvalidArgumentException('CloudEvent JSON must decode to an object');
         }
+
+        $decoded = \get_object_vars($raw);
 
         if (\array_key_exists('data_base64', $decoded)) {
             if (\array_key_exists('data', $decoded)) {
