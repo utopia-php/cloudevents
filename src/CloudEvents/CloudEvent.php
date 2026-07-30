@@ -55,43 +55,6 @@ class CloudEvent
     }
 
     /**
-     * Return a copy of the event with the given extension attribute set
-     *
-     * @param string $name
-     * @param bool|int|string $value
-     * @return self
-     * @throws InvalidArgumentException
-     */
-    public function withExtension(string $name, bool|int|string $value): self
-    {
-        self::assertValidExtensionName($name);
-
-        return new self(
-            type: $this->type,
-            source: $this->source,
-            id: $this->id,
-            specversion: $this->specversion,
-            subject: $this->subject,
-            time: $this->time,
-            datacontenttype: $this->datacontenttype,
-            dataschema: $this->dataschema,
-            data: $this->data,
-            extensions: \array_merge($this->extensions, [$name => $value])
-        );
-    }
-
-    /**
-     * Get an extension attribute value, or null when not set
-     *
-     * @param string $name
-     * @return mixed
-     */
-    public function getExtension(string $name): mixed
-    {
-        return $this->extensions[$name] ?? null;
-    }
-
-    /**
      * Create CloudEvent from array
      *
      * @param array<string, mixed> $array
