@@ -99,7 +99,10 @@ The `CloudEvent` class supports the following properties according to the CloudE
 - **id** (required): Unique identifier for the event
 - **time** (required): Timestamp when the event occurred (RFC3339 format)
 - **datacontenttype** (optional): Content type of the data field (default: "application/json")
+- **dataschema** (optional): URI identifying the schema that the data field adheres to
 - **data** (required): Event payload as an array
+
+Optional attributes are omitted from `toArray()` when absent, since the spec does not allow null attribute values. When present, they must not be empty — `validate()` rejects an empty `dataschema`.
 
 ## Use Cases
 
