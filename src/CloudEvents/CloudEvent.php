@@ -20,8 +20,8 @@ class CloudEvent
      * @param string|null $subject Optional subject of the event in the context of the source
      * @param string|null $time Optional event timestamp in RFC 3339 format
      * @param string|null $datacontenttype Optional content type of data (RFC 2046, e.g., "application/json")
-     * @param string|null $dataschema Optional URI identifying the schema that data adheres to
      * @param mixed $data Optional event payload of any type
+     * @param string|null $dataschema Optional URI identifying the schema that data adheres to
      */
     public function __construct(
         public readonly string $type,
@@ -31,8 +31,8 @@ class CloudEvent
         public readonly ?string $subject = null,
         public readonly ?string $time = null,
         public readonly ?string $datacontenttype = null,
-        public readonly ?string $dataschema = null,
-        public readonly mixed $data = null
+        public readonly mixed $data = null,
+        public readonly ?string $dataschema = null
     ) {
     }
 
@@ -63,8 +63,8 @@ class CloudEvent
             subject: $array['subject'] ?? null,
             time: $array['time'] ?? null,
             datacontenttype: $array['datacontenttype'] ?? null,
-            dataschema: $array['dataschema'] ?? null,
-            data: $array['data'] ?? null
+            data: $array['data'] ?? null,
+            dataschema: $array['dataschema'] ?? null
         );
     }
 
