@@ -481,6 +481,48 @@ class CloudEventTest extends TestCase
         $this->assertEquals('00-abc-def-01', $event->getExtension('traceparent'));
     }
 
+    public function testFromArrayRejectsInvalidExtensionName(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Extension attribute name must contain only lowercase letters and digits');
+
+        CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'Trace_Parent' => 'value'
+        ]);
+    }
+
+    public function testFromArrayRejectsInvalidExtensionValue(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Extension attribute "myext" must be a boolean, integer or string');
+
+        CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'myext' => ['nested' => 'array']
+        ]);
+    }
+
+    public function testFromArrayDropsNullExtensions(): void
+    {
+        $event = CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'traceparent' => null
+        ]);
+
+        $this->assertEquals([], $event->extensions);
+        $this->assertArrayNotHasKey('traceparent', $event->toArray());
+    }
+
     public function testWithExtensionRejectsInvalidName(): void
     {
         $event = new CloudEvent(

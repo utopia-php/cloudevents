@@ -110,6 +110,21 @@ class CloudEvent
             throw new InvalidArgumentException('Unsupported CloudEvents spec version: ' . $array['specversion']);
         }
 
+        $extensions = \array_diff_key($array, \array_flip(self::RESERVED_ATTRIBUTES));
+
+        foreach ($extensions as $name => $value) {
+            if ($value === null) {
+                unset($extensions[$name]);
+                continue;
+            }
+
+            self::assertValidExtensionName((string) $name);
+
+            if (!\is_bool($value) && !\is_int($value) && !\is_string($value)) {
+                throw new InvalidArgumentException('Extension attribute "' . $name . '" must be a boolean, integer or string');
+            }
+        }
+
         return new self(
             type: $array['type'],
             source: $array['source'],
@@ -120,7 +135,7 @@ class CloudEvent
             datacontenttype: $array['datacontenttype'] ?? null,
             data: $array['data'] ?? null,
             dataschema: $array['dataschema'] ?? null,
-            extensions: \array_diff_key($array, \array_flip(self::RESERVED_ATTRIBUTES))
+            extensions: $extensions
         );
     }
 
