@@ -3,6 +3,7 @@
 namespace Utopia\CloudEvents;
 
 use InvalidArgumentException;
+use JsonException;
 
 /**
  * CloudEvent class representing the CloudEvents v1.0 specification
@@ -140,6 +141,80 @@ class CloudEvent
         }
 
         return $array + $this->extensions;
+    }
+
+    /**
+     * Create CloudEvent from its JSON event format representation
+     *
+     * Binary payloads carried in the data_base64 member are decoded
+     * into data.
+     *
+     * @see https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/formats/json-format.md
+     *
+     * @param string $json
+     * @return self
+     * @throws InvalidArgumentException
+     */
+    public static function fromJson(string $json): self
+    {
+        try {
+            $decoded = \json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            throw new InvalidArgumentException('Invalid CloudEvent JSON: ' . $e->getMessage(), 0, $e);
+        }
+
+        if (!\is_array($decoded)) {
+            throw new InvalidArgumentException('CloudEvent JSON must decode to an object');
+        }
+
+        if (\array_key_exists('data_base64', $decoded)) {
+            if (\array_key_exists('data', $decoded)) {
+                throw new InvalidArgumentException('CloudEvent must not contain both data and data_base64');
+            }
+
+            if (!\is_string($decoded['data_base64'])) {
+                throw new InvalidArgumentException('data_base64 must be a string');
+            }
+
+            $binary = \base64_decode($decoded['data_base64'], true);
+
+            if ($binary === false) {
+                throw new InvalidArgumentException('data_base64 must be valid Base64');
+            }
+
+            unset($decoded['data_base64']);
+            $decoded['data'] = $binary;
+        }
+
+        return self::fromArray($decoded);
+    }
+
+    /**
+     * Serialize the CloudEvent to the JSON event format
+     *
+     * String data that is not valid UTF-8 (and therefore cannot be
+     * carried in the data member) is emitted as the data_base64 member.
+     *
+     * @see https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/formats/json-format.md
+     *
+     * @param int $flags json_encode() flags
+     * @return string
+     * @throws InvalidArgumentException
+     */
+    public function toJson(int $flags = 0): string
+    {
+        $array = $this->toArray();
+
+        if (\is_string($this->data) && \preg_match('//u', $this->data) !== 1) {
+            unset($array['data']);
+            $array['data_base64'] = \base64_encode($this->data);
+        }
+
+        try {
+            return \json_encode($array, $flags | JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            throw new InvalidArgumentException('Unable to encode CloudEvent as JSON: ' . $e->getMessage(), 0, $e);
+        }
     }
 
     /**
