@@ -33,14 +33,18 @@ class CloudEventTest extends TestCase
 
     public function testConstructorWithDefaults(): void
     {
-        $event = new CloudEvent();
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id'
+        );
 
         $this->assertEquals('1.0', $event->specversion);
-        $this->assertEquals('', $event->type);
-        $this->assertEquals('', $event->source);
+        $this->assertEquals('test.event', $event->type);
+        $this->assertEquals('test-service', $event->source);
         $this->assertNull($event->subject);
-        $this->assertEquals('', $event->id);
-        $this->assertEquals('', $event->time);
+        $this->assertEquals('test-id', $event->id);
+        $this->assertNull($event->time);
         $this->assertEquals('application/json', $event->datacontenttype);
         $this->assertEquals([], $event->data);
     }
@@ -76,13 +80,13 @@ class CloudEventTest extends TestCase
             'specversion' => '1.0',
             'type' => 'test.event',
             'source' => 'test-service',
-            'id' => 'test-id',
-            'time' => '2025-11-07T10:00:00Z'
+            'id' => 'test-id'
         ];
 
         $event = CloudEvent::fromArray($data);
 
         $this->assertNull($event->subject);
+        $this->assertNull($event->time);
         $this->assertEquals('application/json', $event->datacontenttype);
         $this->assertEquals([], $event->data);
     }
@@ -106,8 +110,58 @@ class CloudEventTest extends TestCase
         CloudEvent::fromArray([
             'specversion' => '2.0',
             'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id'
+        ]);
+    }
+
+    public function testFromArrayMissingSource(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Missing required field: source');
+
+        CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'id' => 'test-id'
+        ]);
+    }
+
+    public function testFromArrayMissingId(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Missing required field: id');
+
+        CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
             'source' => 'test-service'
         ]);
+    }
+
+    public function testFromArrayEmptySource(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Missing required field: source');
+
+        CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => '',
+            'id' => 'test-id'
+        ]);
+    }
+
+    public function testFromArrayAcceptsZeroStringType(): void
+    {
+        $event = CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => '0',
+            'source' => 'test-service',
+            'id' => 'test-id'
+        ]);
+
+        $this->assertEquals('0', $event->type);
     }
 
     public function testFromArrayMissingType(): void
@@ -218,6 +272,60 @@ class CloudEventTest extends TestCase
         );
 
         $event->validate();
+    }
+
+    public function testValidateEmptySource(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Event source is required');
+
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: '',
+            id: 'test-id'
+        );
+
+        $event->validate();
+    }
+
+    public function testValidateEmptyId(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Event id is required');
+
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: ''
+        );
+
+        $event->validate();
+    }
+
+    public function testValidateEmptySubject(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Event subject must not be empty when present');
+
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            subject: ''
+        );
+
+        $event->validate();
+    }
+
+    public function testValidateWithoutTime(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id'
+        );
+
+        $this->assertTrue($event->validate());
     }
 
     public function testRoundTrip(): void

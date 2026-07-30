@@ -13,22 +13,22 @@ class CloudEvent
     /**
      * CloudEvent constructor
      *
+     * @param string $type Event type describing the occurrence (e.g., "com.example.user.created")
+     * @param string $source URI-reference identifying the context in which the event happened
+     * @param string $id Event identifier, unique within the scope of the source
      * @param string $specversion CloudEvents spec version (default: "1.0")
-     * @param string $type Event type that maps to worker (e.g., "v1-stats-usage")
-     * @param string $source Event source (e.g., "imagine")
-     * @param string|null $subject Optional subject, typically project ID
-     * @param string $id Unique event identifier
-     * @param string $time Event timestamp in RFC3339 format
+     * @param string|null $subject Optional subject of the event in the context of the source
+     * @param string|null $time Optional event timestamp in RFC 3339 format
      * @param string $datacontenttype Content type of data (default: "application/json")
      * @param array<string, mixed> $data Event data payload
      */
     public function __construct(
+        public readonly string $type,
+        public readonly string $source,
+        public readonly string $id,
         public readonly string $specversion = '1.0',
-        public readonly string $type = '',
-        public readonly string $source = '',
         public readonly ?string $subject = null,
-        public readonly string $id = '',
-        public readonly string $time = '',
+        public readonly ?string $time = null,
         public readonly string $datacontenttype = 'application/json',
         public readonly array $data = []
     ) {
@@ -43,25 +43,23 @@ class CloudEvent
      */
     public static function fromArray(array $array): self
     {
-        if (!isset($array['specversion'])) {
-            throw new InvalidArgumentException('Missing required field: specversion');
+        foreach (['specversion', 'type', 'source', 'id'] as $field) {
+            if (!isset($array[$field]) || !\is_string($array[$field]) || $array[$field] === '') {
+                throw new InvalidArgumentException('Missing required field: ' . $field);
+            }
         }
 
         if ($array['specversion'] !== '1.0') {
             throw new InvalidArgumentException('Unsupported CloudEvents spec version: ' . $array['specversion']);
         }
 
-        if (!isset($array['type']) || empty($array['type'])) {
-            throw new InvalidArgumentException('Missing required field: type');
-        }
-
         return new self(
-            specversion: $array['specversion'],
             type: $array['type'],
             source: $array['source'],
-            subject: $array['subject'] ?? null,
             id: $array['id'],
-            time: $array['time'],
+            specversion: $array['specversion'],
+            subject: $array['subject'] ?? null,
+            time: $array['time'] ?? null,
             datacontenttype: $array['datacontenttype'] ?? 'application/json',
             data: $array['data'] ?? []
         );
@@ -98,8 +96,24 @@ class CloudEvent
             throw new InvalidArgumentException('Unsupported CloudEvents spec version: ' . $this->specversion);
         }
 
-        if (empty($this->type)) {
+        if ($this->type === '') {
             throw new InvalidArgumentException('Event type is required');
+        }
+
+        if ($this->source === '') {
+            throw new InvalidArgumentException('Event source is required');
+        }
+
+        if ($this->id === '') {
+            throw new InvalidArgumentException('Event id is required');
+        }
+
+        if ($this->subject === '') {
+            throw new InvalidArgumentException('Event subject must not be empty when present');
+        }
+
+        if ($this->time === '') {
+            throw new InvalidArgumentException('Event time must not be empty when present');
         }
 
         return true;
