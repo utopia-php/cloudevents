@@ -46,7 +46,7 @@ class CloudEvent
      * @param string $specversion CloudEvents spec version (default: "1.0")
      * @param string|null $subject Optional subject of the event in the context of the source
      * @param string|null $time Optional event timestamp in RFC 3339 format
-     * @param string|null $datacontenttype Optional content type of data (RFC 2046, e.g., "application/json")
+     * @param string|null $datacontenttype Content type of data (RFC 2046, default: "application/json"); pass null to leave it unset
      * @param mixed $data Optional event payload of any type
      * @param string|null $dataschema Optional URI identifying the schema that data adheres to
      * @param array<string, mixed> $extensions Extension attributes (lowercase alphanumeric names, boolean/integer/string values)
@@ -58,7 +58,7 @@ class CloudEvent
         public readonly string $specversion = '1.0',
         public readonly ?string $subject = null,
         public readonly ?string $time = null,
-        public readonly ?string $datacontenttype = null,
+        public readonly ?string $datacontenttype = 'application/json',
         public readonly mixed $data = null,
         public readonly ?string $dataschema = null,
         public readonly array $extensions = []
@@ -80,6 +80,11 @@ class CloudEvent
 
     /**
      * Create CloudEvent from array
+     *
+     * Unlike the constructor, datacontenttype is not defaulted here: a
+     * parsed event keeps the wire form, so an absent attribute stays
+     * absent (per the JSON format, absent datacontenttype already
+     * implies a JSON payload).
      *
      * @param array<string, mixed> $array
      * @return self
