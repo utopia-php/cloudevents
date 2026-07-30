@@ -610,8 +610,26 @@ class CloudEventTest extends TestCase
         $event = CloudEvent::fromJson($json);
 
         $this->assertEquals('user.created', $event->type);
-        $this->assertEquals(['userId' => '123'], $event->data);
+        $this->assertEquals((object) ['userId' => '123'], $event->data);
         $this->assertEquals('00-abc-def-01', $event->getExtension('traceparent'));
+    }
+
+    public function testFromJsonPreservesJsonDataTypes(): void
+    {
+        $json = '{"specversion":"1.0","type":"t","source":"s","id":"i","data":{"empty":{},"list":[]}}';
+
+        $restored = CloudEvent::fromJson($json)->toJson();
+
+        $this->assertStringContainsString('"empty":{}', $restored);
+        $this->assertStringContainsString('"list":[]', $restored);
+    }
+
+    public function testFromJsonRejectsArrayRoot(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('CloudEvent JSON must decode to an object');
+
+        CloudEvent::fromJson('[{"specversion":"1.0","type":"t","source":"s","id":"i"}]');
     }
 
     public function testFromJsonInvalidJson(): void
@@ -683,7 +701,15 @@ class CloudEventTest extends TestCase
 
         $restored = CloudEvent::fromJson($original->toJson());
 
-        $this->assertEquals($original, $restored);
+        $this->assertEquals($original->type, $restored->type);
+        $this->assertEquals($original->source, $restored->source);
+        $this->assertEquals($original->id, $restored->id);
+        $this->assertEquals($original->subject, $restored->subject);
+        $this->assertEquals($original->time, $restored->time);
+        $this->assertEquals($original->datacontenttype, $restored->datacontenttype);
+        $this->assertEquals($original->dataschema, $restored->dataschema);
+        $this->assertEquals($original->extensions, $restored->extensions);
+        $this->assertJsonStringEqualsJsonString($original->toJson(), $restored->toJson());
     }
 
     public function testRoundTrip(): void
