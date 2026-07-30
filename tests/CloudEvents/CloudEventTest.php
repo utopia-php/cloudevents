@@ -304,6 +304,21 @@ class CloudEventTest extends TestCase
         $event->validate();
     }
 
+    public function testValidateRejectsBlankDatacontenttype(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Event datacontenttype must not be empty when present');
+
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            datacontenttype: '   '
+        );
+
+        $event->validate();
+    }
+
     public function testFromArrayDoesNotFabricateDatacontenttype(): void
     {
         $event = CloudEvent::fromArray([
