@@ -37,8 +37,8 @@ class CloudEvent
      * @param string|null $subject Optional subject of the event in the context of the source
      * @param string|null $time Optional event timestamp in RFC 3339 format
      * @param string|null $datacontenttype Optional content type of data (RFC 2046, e.g., "application/json")
-     * @param string|null $dataschema Optional URI identifying the schema that data adheres to
      * @param mixed $data Optional event payload of any type
+     * @param string|null $dataschema Optional URI identifying the schema that data adheres to
      * @param array<string, mixed> $extensions Extension attributes (lowercase alphanumeric names, boolean/integer/string values)
      */
     public function __construct(
@@ -49,8 +49,8 @@ class CloudEvent
         public readonly ?string $subject = null,
         public readonly ?string $time = null,
         public readonly ?string $datacontenttype = null,
-        public readonly ?string $dataschema = null,
         public readonly mixed $data = null,
+        public readonly ?string $dataschema = null,
         public readonly array $extensions = []
     ) {
     }
@@ -111,6 +111,21 @@ class CloudEvent
             throw new InvalidArgumentException('Unsupported CloudEvents spec version: ' . $array['specversion']);
         }
 
+        $extensions = \array_diff_key($array, \array_flip(self::RESERVED_ATTRIBUTES));
+
+        foreach ($extensions as $name => $value) {
+            if ($value === null) {
+                unset($extensions[$name]);
+                continue;
+            }
+
+            self::assertValidExtensionName((string) $name);
+
+            if (!\is_bool($value) && !\is_int($value) && !\is_string($value)) {
+                throw new InvalidArgumentException('Extension attribute "' . $name . '" must be a boolean, integer or string');
+            }
+        }
+
         return new self(
             type: $array['type'],
             source: $array['source'],
@@ -119,9 +134,9 @@ class CloudEvent
             subject: $array['subject'] ?? null,
             time: $array['time'] ?? null,
             datacontenttype: $array['datacontenttype'] ?? null,
-            dataschema: $array['dataschema'] ?? null,
             data: $array['data'] ?? null,
-            extensions: \array_diff_key($array, \array_flip(self::RESERVED_ATTRIBUTES))
+            dataschema: $array['dataschema'] ?? null,
+            extensions: $extensions
         );
     }
 
@@ -169,7 +184,9 @@ class CloudEvent
      * Create CloudEvent from its JSON event format representation
      *
      * Binary payloads carried in the data_base64 member are decoded
-     * into data.
+     * into data. JSON objects inside data are decoded as stdClass so
+     * that object and array payloads keep their JSON type when
+     * re-encoded (e.g., an empty object stays {} instead of []).
      *
      * @see https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/formats/json-format.md
      *
@@ -180,14 +197,16 @@ class CloudEvent
     public static function fromJson(string $json): self
     {
         try {
-            $decoded = \json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+            $raw = \json_decode($json, false, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException $e) {
             throw new InvalidArgumentException('Invalid CloudEvent JSON: ' . $e->getMessage(), 0, $e);
         }
 
-        if (!\is_array($decoded)) {
+        if (!$raw instanceof \stdClass) {
             throw new InvalidArgumentException('CloudEvent JSON must decode to an object');
         }
+
+        $decoded = \get_object_vars($raw);
 
         if (\array_key_exists('data_base64', $decoded)) {
             if (\array_key_exists('data', $decoded)) {
@@ -279,7 +298,7 @@ class CloudEvent
             throw new InvalidArgumentException('Event time must be a valid RFC 3339 timestamp: ' . $this->time);
         }
 
-        if ($this->datacontenttype === '') {
+        if ($this->datacontenttype !== null && \trim($this->datacontenttype) === '') {
             throw new InvalidArgumentException('Event datacontenttype must not be empty when present');
         }
 

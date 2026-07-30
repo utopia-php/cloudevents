@@ -304,6 +304,21 @@ class CloudEventTest extends TestCase
         $event->validate();
     }
 
+    public function testValidateRejectsBlankDatacontenttype(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Event datacontenttype must not be empty when present');
+
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            datacontenttype: '   '
+        );
+
+        $event->validate();
+    }
+
     public function testFromArrayDoesNotFabricateDatacontenttype(): void
     {
         $event = CloudEvent::fromArray([
@@ -464,6 +479,48 @@ class CloudEventTest extends TestCase
 
         $this->assertEquals(['traceparent' => '00-abc-def-01', 'sequence' => 7], $event->extensions);
         $this->assertEquals('00-abc-def-01', $event->getExtension('traceparent'));
+    }
+
+    public function testFromArrayRejectsInvalidExtensionName(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Extension attribute name must contain only lowercase letters and digits');
+
+        CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'Trace_Parent' => 'value'
+        ]);
+    }
+
+    public function testFromArrayRejectsInvalidExtensionValue(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Extension attribute "myext" must be a boolean, integer or string');
+
+        CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'myext' => ['nested' => 'array']
+        ]);
+    }
+
+    public function testFromArrayDropsNullExtensions(): void
+    {
+        $event = CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'traceparent' => null
+        ]);
+
+        $this->assertEquals([], $event->extensions);
+        $this->assertArrayNotHasKey('traceparent', $event->toArray());
     }
 
     public function testWithExtensionRejectsInvalidName(): void
@@ -655,8 +712,26 @@ class CloudEventTest extends TestCase
         $event = CloudEvent::fromJson($json);
 
         $this->assertEquals('user.created', $event->type);
-        $this->assertEquals(['userId' => '123'], $event->data);
+        $this->assertEquals((object) ['userId' => '123'], $event->data);
         $this->assertEquals('00-abc-def-01', $event->getExtension('traceparent'));
+    }
+
+    public function testFromJsonPreservesJsonDataTypes(): void
+    {
+        $json = '{"specversion":"1.0","type":"t","source":"s","id":"i","data":{"empty":{},"list":[]}}';
+
+        $restored = CloudEvent::fromJson($json)->toJson();
+
+        $this->assertStringContainsString('"empty":{}', $restored);
+        $this->assertStringContainsString('"list":[]', $restored);
+    }
+
+    public function testFromJsonRejectsArrayRoot(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('CloudEvent JSON must decode to an object');
+
+        CloudEvent::fromJson('[{"specversion":"1.0","type":"t","source":"s","id":"i"}]');
     }
 
     public function testFromJsonInvalidJson(): void
@@ -728,7 +803,15 @@ class CloudEventTest extends TestCase
 
         $restored = CloudEvent::fromJson($original->toJson());
 
-        $this->assertEquals($original, $restored);
+        $this->assertEquals($original->type, $restored->type);
+        $this->assertEquals($original->source, $restored->source);
+        $this->assertEquals($original->id, $restored->id);
+        $this->assertEquals($original->subject, $restored->subject);
+        $this->assertEquals($original->time, $restored->time);
+        $this->assertEquals($original->datacontenttype, $restored->datacontenttype);
+        $this->assertEquals($original->dataschema, $restored->dataschema);
+        $this->assertEquals($original->extensions, $restored->extensions);
+        $this->assertJsonStringEqualsJsonString($original->toJson(), $restored->toJson());
     }
 
     public function testRoundTrip(): void
