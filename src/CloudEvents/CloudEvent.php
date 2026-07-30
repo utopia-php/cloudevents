@@ -259,6 +259,10 @@ class CloudEvent
             throw new InvalidArgumentException('Event source is required');
         }
 
+        if (!self::isValidUriReference($this->source)) {
+            throw new InvalidArgumentException('Event source must be a valid URI-reference: ' . $this->source);
+        }
+
         if ($this->id === '') {
             throw new InvalidArgumentException('Event id is required');
         }
@@ -271,12 +275,24 @@ class CloudEvent
             throw new InvalidArgumentException('Event time must not be empty when present');
         }
 
+        if ($this->time !== null && !self::isValidRfc3339($this->time)) {
+            throw new InvalidArgumentException('Event time must be a valid RFC 3339 timestamp: ' . $this->time);
+        }
+
         if ($this->datacontenttype === '') {
             throw new InvalidArgumentException('Event datacontenttype must not be empty when present');
         }
 
+        if ($this->datacontenttype !== null && !self::isValidMediaType($this->datacontenttype)) {
+            throw new InvalidArgumentException('Event datacontenttype must be a valid RFC 2046 media type: ' . $this->datacontenttype);
+        }
+
         if ($this->dataschema === '') {
             throw new InvalidArgumentException('Event dataschema must not be empty when present');
+        }
+
+        if ($this->dataschema !== null && !self::isValidUri($this->dataschema)) {
+            throw new InvalidArgumentException('Event dataschema must be a valid URI: ' . $this->dataschema);
         }
 
         foreach ($this->extensions as $name => $value) {
@@ -288,6 +304,78 @@ class CloudEvent
         }
 
         return true;
+    }
+
+    /**
+     * Check that a timestamp adheres to RFC 3339
+     *
+     * @param string $time
+     * @return bool
+     */
+    private static function isValidRfc3339(string $time): bool
+    {
+        $pattern = '/^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(\.\d+)?([Zz]|[+-](\d{2}):(\d{2}))$/';
+
+        if (\preg_match($pattern, $time, $matches) !== 1) {
+            return false;
+        }
+
+        if (!\checkdate((int) $matches[2], (int) $matches[3], (int) $matches[1])) {
+            return false;
+        }
+
+        if ((int) $matches[4] > 23 || (int) $matches[5] > 59 || (int) $matches[6] > 60) {
+            return false;
+        }
+
+        if (isset($matches[9], $matches[10]) && ((int) $matches[9] > 23 || (int) $matches[10] > 59)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check that a string only uses characters RFC 3986 allows in a
+     * URI-reference and that every percent sign starts a valid
+     * percent-encoded triplet
+     *
+     * @param string $uri
+     * @return bool
+     */
+    private static function isValidUriReference(string $uri): bool
+    {
+        if (\preg_match('/^[A-Za-z0-9\-._~:\/?#\[\]@!$&\'()*+,;=%]*$/', $uri) !== 1) {
+            return false;
+        }
+
+        return \preg_match('/%(?![0-9A-Fa-f]{2})/', $uri) !== 1;
+    }
+
+    /**
+     * Check that a string is an absolute URI (has a scheme) with valid
+     * URI characters
+     *
+     * @param string $uri
+     * @return bool
+     */
+    private static function isValidUri(string $uri): bool
+    {
+        return \preg_match('/^[A-Za-z][A-Za-z0-9+.\-]*:/', $uri) === 1 && self::isValidUriReference($uri);
+    }
+
+    /**
+     * Check that a string is an RFC 2046 media type such as
+     * "application/json" or "text/plain; charset=utf-8"
+     *
+     * @param string $type
+     * @return bool
+     */
+    private static function isValidMediaType(string $type): bool
+    {
+        $token = "[0-9A-Za-z!#$%&'*+.^_`|~-]+";
+
+        return \preg_match('{^' . $token . '/' . $token . '(\s*;.*)?$}', $type) === 1;
     }
 
     /**

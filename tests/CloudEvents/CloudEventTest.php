@@ -522,6 +522,108 @@ class CloudEventTest extends TestCase
         $this->assertEquals($original->extensions, $restored->extensions);
     }
 
+    public function testValidateAcceptsValidFormats(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'https://example.com/user-service#section',
+            id: 'test-id',
+            time: '2025-11-07T10:00:00.123+05:30',
+            datacontenttype: 'text/plain; charset=utf-8',
+            dataschema: 'https://example.com/schemas/user.json'
+        );
+
+        $this->assertTrue($event->validate());
+
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'user-service',
+            id: 'test-id',
+            time: '2025-11-07T10:00:00Z'
+        );
+
+        $this->assertTrue($event->validate());
+    }
+
+    public function testValidateRejectsInvalidTime(): void
+    {
+        $invalid = ['not-a-time', '2025-11-07 10:00:00Z', '2025-13-07T10:00:00Z', '2025-11-07T25:00:00Z', '2025-11-07T10:00:00'];
+
+        foreach ($invalid as $time) {
+            $event = new CloudEvent(
+                type: 'test.event',
+                source: 'test-service',
+                id: 'test-id',
+                time: $time
+            );
+
+            try {
+                $event->validate();
+                $this->fail('Expected InvalidArgumentException for time: ' . $time);
+            } catch (InvalidArgumentException $e) {
+                $this->assertStringContainsString('RFC 3339', $e->getMessage());
+            }
+        }
+    }
+
+    public function testValidateRejectsInvalidSourceUri(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Event source must be a valid URI-reference');
+
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'not a uri',
+            id: 'test-id'
+        );
+
+        $event->validate();
+    }
+
+    public function testValidateRejectsInvalidPercentEncodingInSource(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Event source must be a valid URI-reference');
+
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'service/%ZZ',
+            id: 'test-id'
+        );
+
+        $event->validate();
+    }
+
+    public function testValidateRejectsInvalidDatacontenttype(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Event datacontenttype must be a valid RFC 2046 media type');
+
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            datacontenttype: 'json'
+        );
+
+        $event->validate();
+    }
+
+    public function testValidateRejectsRelativeDataschema(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Event dataschema must be a valid URI');
+
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            dataschema: 'schemas/user.json'
+        );
+
+        $event->validate();
+    }
+
     public function testToJson(): void
     {
         $event = new CloudEvent(
