@@ -551,49 +551,43 @@ class CloudEventTest extends TestCase
         $this->assertArrayNotHasKey('traceparent', $event->toArray());
     }
 
-    public function testValidateRejectsInvalidExtensionName(): void
+    public function testConstructorRejectsInvalidExtensionName(): void
     {
-        $event = new CloudEvent(
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Extension attribute name must contain only lowercase letters and digits');
+
+        new CloudEvent(
             type: 'test.event',
             source: 'test-service',
             id: 'test-id',
             extensions: ['Trace_Parent' => 'value']
         );
-
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Extension attribute name must contain only lowercase letters and digits');
-
-        $event->validate();
     }
 
-    public function testValidateRejectsReservedExtensionName(): void
+    public function testConstructorRejectsReservedExtensionName(): void
     {
-        $event = new CloudEvent(
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Extension attribute name conflicts with a core attribute: data');
+
+        new CloudEvent(
             type: 'test.event',
             source: 'test-service',
             id: 'test-id',
             extensions: ['data' => 'value']
         );
-
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Extension attribute name conflicts with a core attribute: data');
-
-        $event->validate();
     }
 
-    public function testValidateRejectsInvalidExtensionValue(): void
+    public function testConstructorRejectsInvalidExtensionValue(): void
     {
-        $event = new CloudEvent(
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Extension attribute "myext" must be a boolean, integer or string');
+
+        new CloudEvent(
             type: 'test.event',
             source: 'test-service',
             id: 'test-id',
             extensions: ['myext' => ['nested' => 'array']]
         );
-
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Extension attribute "myext" must be a boolean, integer or string');
-
-        $event->validate();
     }
 
     public function testExtensionRoundTrip(): void

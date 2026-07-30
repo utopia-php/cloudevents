@@ -50,6 +50,7 @@ class CloudEvent
      * @param mixed $data Optional event payload of any type
      * @param string|null $dataschema Optional URI identifying the schema that data adheres to
      * @param array<string, mixed> $extensions Extension attributes (lowercase alphanumeric names, boolean/integer/string values)
+     * @throws InvalidArgumentException When an extension attribute has an invalid name or value
      */
     public function __construct(
         public readonly string $type,
@@ -63,6 +64,13 @@ class CloudEvent
         public readonly ?string $dataschema = null,
         public readonly array $extensions = []
     ) {
+        foreach ($this->extensions as $name => $value) {
+            self::assertValidExtensionName((string) $name);
+
+            if (!\is_bool($value) && !\is_int($value) && !\is_string($value)) {
+                throw new InvalidArgumentException('Extension attribute "' . $name . '" must be a boolean, integer or string');
+            }
+        }
     }
 
     /**
@@ -97,20 +105,12 @@ class CloudEvent
             throw new InvalidArgumentException('Unsupported CloudEvents spec version: ' . $array['specversion']);
         }
 
-        $extensions = \array_diff_key($array, \array_flip(self::RESERVED_ATTRIBUTES));
-
-        foreach ($extensions as $name => $value) {
-            if ($value === null) {
-                unset($extensions[$name]);
-                continue;
-            }
-
-            self::assertValidExtensionName((string) $name);
-
-            if (!\is_bool($value) && !\is_int($value) && !\is_string($value)) {
-                throw new InvalidArgumentException('Extension attribute "' . $name . '" must be a boolean, integer or string');
-            }
-        }
+        // Null values mean the attribute is unset; the constructor
+        // validates whatever remains.
+        $extensions = \array_filter(
+            \array_diff_key($array, \array_flip(self::RESERVED_ATTRIBUTES)),
+            fn (mixed $value): bool => $value !== null
+        );
 
         return new self(
             type: $array['type'],
@@ -284,13 +284,8 @@ class CloudEvent
             throw new InvalidArgumentException('Event dataschema must not be empty when present');
         }
 
-        foreach ($this->extensions as $name => $value) {
-            self::assertValidExtensionName((string) $name);
-
-            if (!\is_bool($value) && !\is_int($value) && !\is_string($value)) {
-                throw new InvalidArgumentException('Extension attribute "' . $name . '" must be a boolean, integer or string');
-            }
-        }
+        // Extension attributes need no checks here: the constructor
+        // validates them, and readonly keeps the invariant intact.
 
         return true;
     }
