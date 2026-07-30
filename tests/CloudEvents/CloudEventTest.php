@@ -431,7 +431,26 @@ class CloudEventTest extends TestCase
         $this->assertTrue($event->validate());
     }
 
-    public function testWithExtension(): void
+    public function testExtensions(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            extensions: [
+                'traceparent' => '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+                'sequence' => 42,
+                'sampled' => true,
+            ]
+        );
+
+        $this->assertEquals('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01', $event->extensions['traceparent']);
+        $this->assertEquals(42, $event->extensions['sequence']);
+        $this->assertTrue($event->extensions['sampled']);
+        $this->assertTrue($event->validate());
+    }
+
+    public function testExtensionsDefaultToEmpty(): void
     {
         $event = new CloudEvent(
             type: 'test.event',
@@ -439,27 +458,17 @@ class CloudEventTest extends TestCase
             id: 'test-id'
         );
 
-        $extended = $event
-            ->withExtension('traceparent', '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01')
-            ->withExtension('sequence', 42)
-            ->withExtension('sampled', true);
-
-        $this->assertEquals('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01', $extended->getExtension('traceparent'));
-        $this->assertEquals(42, $extended->getExtension('sequence'));
-        $this->assertTrue($extended->getExtension('sampled'));
-        $this->assertTrue($extended->validate());
-
         $this->assertEquals([], $event->extensions);
-        $this->assertNull($event->getExtension('traceparent'));
     }
 
     public function testToArrayIncludesExtensions(): void
     {
-        $event = (new CloudEvent(
+        $event = new CloudEvent(
             type: 'test.event',
             source: 'test-service',
-            id: 'test-id'
-        ))->withExtension('partitionkey', 'shard-1');
+            id: 'test-id',
+            extensions: ['partitionkey' => 'shard-1']
+        );
 
         $array = $event->toArray();
 
@@ -478,7 +487,7 @@ class CloudEventTest extends TestCase
         ]);
 
         $this->assertEquals(['traceparent' => '00-abc-def-01', 'sequence' => 7], $event->extensions);
-        $this->assertEquals('00-abc-def-01', $event->getExtension('traceparent'));
+        $this->assertEquals('00-abc-def-01', $event->extensions['traceparent']);
     }
 
     public function testFromArrayRejectsInvalidExtensionName(): void
@@ -523,32 +532,34 @@ class CloudEventTest extends TestCase
         $this->assertArrayNotHasKey('traceparent', $event->toArray());
     }
 
-    public function testWithExtensionRejectsInvalidName(): void
+    public function testValidateRejectsInvalidExtensionName(): void
     {
         $event = new CloudEvent(
             type: 'test.event',
             source: 'test-service',
-            id: 'test-id'
+            id: 'test-id',
+            extensions: ['Trace_Parent' => 'value']
         );
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Extension attribute name must contain only lowercase letters and digits');
 
-        $event->withExtension('Trace_Parent', 'value');
+        $event->validate();
     }
 
-    public function testWithExtensionRejectsReservedName(): void
+    public function testValidateRejectsReservedExtensionName(): void
     {
         $event = new CloudEvent(
             type: 'test.event',
             source: 'test-service',
-            id: 'test-id'
+            id: 'test-id',
+            extensions: ['data' => 'value']
         );
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Extension attribute name conflicts with a core attribute: data');
 
-        $event->withExtension('data', 'value');
+        $event->validate();
     }
 
     public function testValidateRejectsInvalidExtensionValue(): void
@@ -568,11 +579,12 @@ class CloudEventTest extends TestCase
 
     public function testExtensionRoundTrip(): void
     {
-        $original = (new CloudEvent(
+        $original = new CloudEvent(
             type: 'test.event',
             source: 'test-service',
-            id: 'test-id'
-        ))->withExtension('traceparent', '00-abc-def-01');
+            id: 'test-id',
+            extensions: ['traceparent' => '00-abc-def-01']
+        );
 
         $restored = CloudEvent::fromArray($original->toArray());
 
@@ -611,7 +623,7 @@ class CloudEventTest extends TestCase
 
         $this->assertEquals('user.created', $event->type);
         $this->assertEquals((object) ['userId' => '123'], $event->data);
-        $this->assertEquals('00-abc-def-01', $event->getExtension('traceparent'));
+        $this->assertEquals('00-abc-def-01', $event->extensions['traceparent']);
     }
 
     public function testFromJsonPreservesJsonDataTypes(): void
@@ -688,7 +700,7 @@ class CloudEventTest extends TestCase
 
     public function testJsonRoundTrip(): void
     {
-        $original = (new CloudEvent(
+        $original = new CloudEvent(
             type: 'payment.processed',
             source: 'https://example.com/payments',
             id: 'event-123',
@@ -696,8 +708,9 @@ class CloudEventTest extends TestCase
             time: '2025-11-07T10:00:00Z',
             datacontenttype: 'application/json',
             dataschema: 'https://example.com/schemas/payment.json',
-            data: ['paymentId' => 'xyz']
-        ))->withExtension('traceparent', '00-abc-def-01');
+            data: ['paymentId' => 'xyz'],
+            extensions: ['traceparent' => '00-abc-def-01']
+        );
 
         $restored = CloudEvent::fromJson($original->toJson());
 
