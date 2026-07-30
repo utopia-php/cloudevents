@@ -45,8 +45,8 @@ class CloudEventTest extends TestCase
         $this->assertNull($event->subject);
         $this->assertEquals('test-id', $event->id);
         $this->assertNull($event->time);
-        $this->assertEquals('application/json', $event->datacontenttype);
-        $this->assertEquals([], $event->data);
+        $this->assertNull($event->datacontenttype);
+        $this->assertNull($event->data);
     }
 
     public function testFromArray(): void
@@ -87,8 +87,8 @@ class CloudEventTest extends TestCase
 
         $this->assertNull($event->subject);
         $this->assertNull($event->time);
-        $this->assertEquals('application/json', $event->datacontenttype);
-        $this->assertEquals([], $event->data);
+        $this->assertNull($event->datacontenttype);
+        $this->assertNull($event->data);
     }
 
     public function testFromArrayMissingSpecversion(): void
@@ -214,19 +214,63 @@ class CloudEventTest extends TestCase
         ], $array);
     }
 
-    public function testToArrayWithNullSubject(): void
+    public function testToArrayOmitsAbsentOptionalAttributes(): void
     {
         $event = new CloudEvent(
-            specversion: '1.0',
             type: 'test.event',
             source: 'test-service',
-            id: 'test-id',
-            time: '2025-11-07T10:00:00Z'
+            id: 'test-id'
         );
 
         $array = $event->toArray();
 
-        $this->assertNull($array['subject']);
+        $this->assertEquals([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id'
+        ], $array);
+        $this->assertArrayNotHasKey('subject', $array);
+        $this->assertArrayNotHasKey('time', $array);
+        $this->assertArrayNotHasKey('datacontenttype', $array);
+        $this->assertArrayNotHasKey('data', $array);
+    }
+
+    public function testDataAcceptsAnyType(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            datacontenttype: 'text/plain',
+            data: 'plain text payload'
+        );
+
+        $this->assertEquals('plain text payload', $event->data);
+        $this->assertEquals('plain text payload', $event->toArray()['data']);
+
+        $event = CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'data' => 42
+        ]);
+
+        $this->assertEquals(42, $event->data);
+    }
+
+    public function testFromArrayDoesNotFabricateDatacontenttype(): void
+    {
+        $event = CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id'
+        ]);
+
+        $this->assertNull($event->datacontenttype);
+        $this->assertArrayNotHasKey('datacontenttype', $event->toArray());
     }
 
     public function testValidate(): void
