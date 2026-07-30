@@ -20,6 +20,7 @@ class CloudEvent
      * @param string|null $subject Optional subject of the event in the context of the source
      * @param string|null $time Optional event timestamp in RFC 3339 format
      * @param string|null $datacontenttype Optional content type of data (RFC 2046, e.g., "application/json")
+     * @param string|null $dataschema Optional URI identifying the schema that data adheres to
      * @param mixed $data Optional event payload of any type
      */
     public function __construct(
@@ -30,6 +31,7 @@ class CloudEvent
         public readonly ?string $subject = null,
         public readonly ?string $time = null,
         public readonly ?string $datacontenttype = null,
+        public readonly ?string $dataschema = null,
         public readonly mixed $data = null
     ) {
     }
@@ -61,6 +63,7 @@ class CloudEvent
             subject: $array['subject'] ?? null,
             time: $array['time'] ?? null,
             datacontenttype: $array['datacontenttype'] ?? null,
+            dataschema: $array['dataschema'] ?? null,
             data: $array['data'] ?? null
         );
     }
@@ -92,6 +95,10 @@ class CloudEvent
 
         if ($this->datacontenttype !== null) {
             $array['datacontenttype'] = $this->datacontenttype;
+        }
+
+        if ($this->dataschema !== null) {
+            $array['dataschema'] = $this->dataschema;
         }
 
         if ($this->data !== null) {
@@ -135,6 +142,10 @@ class CloudEvent
 
         if ($this->datacontenttype === '') {
             throw new InvalidArgumentException('Event datacontenttype must not be empty when present');
+        }
+
+        if ($this->dataschema === '') {
+            throw new InvalidArgumentException('Event dataschema must not be empty when present');
         }
 
         return true;
