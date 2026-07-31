@@ -39,7 +39,7 @@ $event = new CloudEvent(
     source: 'https://example.com/user-service',
     id: uniqid(),
     subject: 'user-123',
-    time: date('c'),
+    time: CloudEvent::now(),
     datacontenttype: 'application/json',
     data: [
         'userId' => '123',
@@ -50,6 +50,8 @@ $event = new CloudEvent(
 ```
 
 When using the constructor, only `type`, `source` and `id` are required. All other attributes are optional. Arrays passed to `CloudEvent::fromArray()` must also carry an explicit `specversion`.
+
+`CloudEvent::now()` returns the current time as an RFC 3339 UTC timestamp with millisecond precision (e.g., `2025-11-07T10:00:00.123Z`), ready to use as the `time` attribute.
 
 ### Converting to Array
 
