@@ -45,8 +45,21 @@ class CloudEventTest extends TestCase
         $this->assertNull($event->subject);
         $this->assertEquals('test-id', $event->id);
         $this->assertNull($event->time);
-        $this->assertNull($event->datacontenttype);
+        $this->assertEquals('application/json', $event->datacontenttype);
         $this->assertNull($event->data);
+    }
+
+    public function testDatacontenttypeAllowsExplicitNull(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            datacontenttype: null
+        );
+
+        $this->assertNull($event->datacontenttype);
+        $this->assertArrayNotHasKey('datacontenttype', $event->toArray());
     }
 
     public function testFromArray(): void
@@ -228,11 +241,11 @@ class CloudEventTest extends TestCase
             'specversion' => '1.0',
             'type' => 'test.event',
             'source' => 'test-service',
-            'id' => 'test-id'
+            'id' => 'test-id',
+            'datacontenttype' => 'application/json'
         ], $array);
         $this->assertArrayNotHasKey('subject', $array);
         $this->assertArrayNotHasKey('time', $array);
-        $this->assertArrayNotHasKey('datacontenttype', $array);
         $this->assertArrayNotHasKey('data', $array);
     }
 

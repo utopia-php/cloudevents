@@ -40,7 +40,6 @@ $event = new CloudEvent(
     id: uniqid(),
     subject: 'user-123',
     time: CloudEvent::now(),
-    datacontenttype: 'application/json',
     data: [
         'userId' => '123',
         'email' => 'user@example.com',
@@ -49,7 +48,7 @@ $event = new CloudEvent(
 );
 ```
 
-When using the constructor, only `type`, `source` and `id` are required. All other attributes are optional. Arrays passed to `CloudEvent::fromArray()` must also carry an explicit `specversion`.
+When using the constructor, only `type`, `source` and `id` are required. All other attributes are optional. `datacontenttype` defaults to `application/json`; pass `null` to leave it unset. Arrays passed to `CloudEvent::fromArray()` must also carry an explicit `specversion`.
 
 `CloudEvent::now()` returns the current time as an RFC 3339 UTC timestamp with millisecond precision (e.g., `2025-11-07T10:00:00.123Z`), ready to use as the `time` attribute.
 
@@ -136,7 +135,7 @@ The `CloudEvent` class supports the following context attributes according to th
 - **source** (required): URI-reference identifying the context in which the event happened (e.g., "https://example.com/user-service")
 - **specversion** (required): CloudEvents specification version (default: "1.0")
 - **type** (required): Event type identifier, ideally reverse-DNS prefixed (e.g., "com.example.user.created")
-- **datacontenttype** (optional): RFC 2046 content type of the data field (e.g., "application/json")
+- **datacontenttype** (optional): RFC 2046 content type of the data field (constructor default: "application/json")
 - **dataschema** (optional): URI identifying the schema that data adheres to
 - **subject** (optional): Subject of the event in the context of the source
 - **time** (optional): Timestamp of when the occurrence happened (RFC 3339 format)
