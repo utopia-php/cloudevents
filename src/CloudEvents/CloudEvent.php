@@ -4,96 +4,82 @@ namespace Utopia\CloudEvents;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use InvalidArgumentException;
+use JsonException;
 
 /**
  * CloudEvent class representing the CloudEvents v1.0 specification
- *
  * @see https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md
- * @see https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/formats/json-format.md
  */
 class CloudEvent
 {
     /**
-     * The only spec version this library implements.
-     */
-    public const SPECVERSION = '1.0';
-
-    /**
      * RFC 3339 (UTC, millisecond precision) format string.
      *
-     * PHP's DATE_ATOM renders UTC as "+00:00" and carries no sub-second part,
-     * so it is not used here.
+     * PHP's DATE_ATOM renders UTC as "+00:00" and carries no sub-second
+     * part, so it is not used here.
      */
     public const TIME_FORMAT = 'Y-m-d\TH:i:s.v\Z';
 
     /**
-     * Attribute names owned by the spec, which therefore may not be used as
-     * extension attribute names.
-     *
-     * @var array<int, string>
+     * Names reserved for core context attributes, which extension
+     * attributes must not use.
      */
-    private const RESERVED = [
+    private const RESERVED_ATTRIBUTES = [
         'specversion',
         'type',
         'source',
-        'subject',
         'id',
+        'subject',
         'time',
         'datacontenttype',
         'dataschema',
         'data',
-        'data_base64',
     ];
-
-    /**
-     * Extension context attributes, keyed by attribute name.
-     *
-     * A digits-only name such as "123" is legal, and PHP stores it as an int key,
-     * which is why the key type here is array-key rather than string.
-     *
-     * @var array<array-key, string|int|bool>
-     */
-    public readonly array $extensions;
 
     /**
      * CloudEvent constructor
      *
-     * @param  string  $specversion  CloudEvents spec version (default: "1.0")
-     * @param  string  $type  Event type that maps to worker (e.g., "v1-stats-usage")
-     * @param  string  $source  Event source, a non-empty URI-reference (e.g., "imagine")
-     * @param  string|null  $subject  Optional subject, typically project ID
-     * @param  string  $id  Unique event identifier
-     * @param  string  $time  Event timestamp in RFC 3339 format, see self::now()
-     * @param  string  $datacontenttype  Content type of data (default: "application/json")
-     * @param  mixed  $data  Event data payload. The JSON format leaves this unrestricted,
-     *                       so an array, string, number, boolean or null are all valid.
-     * @param  string|null  $dataschema  Optional URI identifying the schema of $data
-     * @param  array<array-key, mixed>  $extensions  Extension context attributes. Names must
-     *                                               consist of lowercase a-z and 0-9 only and
-     *                                               must not collide with a spec attribute.
-     *
-     * @throws Exception on an invalid extension attribute name or value
+     * @param string $type Event type describing the occurrence (e.g., "com.example.user.created")
+     * @param string $source URI-reference identifying the context in which the event happened
+     * @param string $id Event identifier, unique within the scope of the source
+     * @param string $specversion CloudEvents spec version (default: "1.0")
+     * @param string|null $subject Optional subject of the event in the context of the source
+     * @param string|null $time Optional event timestamp in RFC 3339 format
+     * @param string|null $datacontenttype Content type of data (RFC 2046, default: "application/json"); pass null to leave it unset
+     * @param mixed $data Optional event payload of any type
+     * @param string|null $dataschema Optional URI identifying the schema that data adheres to
+     * @param array<array-key, mixed> $extensions Extension attributes (lowercase alphanumeric names, boolean/integer/string values)
+     * @throws InvalidArgumentException When an extension attribute has an invalid name or value
      */
     public function __construct(
-        public readonly string $specversion = self::SPECVERSION,
-        public readonly string $type = '',
-        public readonly string $source = '',
+        public readonly string $type,
+        public readonly string $source,
+        public readonly string $id,
+        public readonly string $specversion = '1.0',
         public readonly ?string $subject = null,
-        public readonly string $id = '',
-        public readonly string $time = '',
-        public readonly string $datacontenttype = 'application/json',
-        public readonly mixed $data = [],
+        public readonly ?string $time = null,
+        public readonly ?string $datacontenttype = 'application/json',
+        public readonly mixed $data = null,
         public readonly ?string $dataschema = null,
-        array $extensions = [],
+        public readonly array $extensions = []
     ) {
-        $this->extensions = self::filterExtensions($extensions, lenient: false);
+        foreach ($this->extensions as $name => $value) {
+            $error = self::extensionError((string) $name, $value);
+
+            if ($error !== null) {
+                throw new InvalidArgumentException($error);
+            }
+        }
     }
 
     /**
      * Current time as an RFC 3339 UTC timestamp with milliseconds
      *
-     * Produces e.g. "2025-11-07T10:00:00.123Z", which is what the `time`
+     * Produces e.g. "2025-11-07T10:00:00.123Z", which is what the time
      * attribute expects.
+     *
+     * @return string
      */
     public static function now(): string
     {
@@ -103,268 +89,243 @@ class CloudEvent
     /**
      * Create CloudEvent from array
      *
-     * Per the JSON format, an attribute whose value is null is treated as unset,
-     * and any member that is not a spec attribute is carried as an extension.
+     * Unlike the constructor, datacontenttype is not defaulted here: a
+     * parsed event keeps the wire form, so an absent attribute stays
+     * absent (per the JSON format, absent datacontenttype already
+     * implies a JSON payload).
      *
-     * Strict mode (the default) raises an Exception when:
-     *  - `specversion` is missing, or is not the string "1.0";
-     *  - `type` is missing, empty, or not a string;
-     *  - any other spec attribute is present with a non-string value;
-     *  - an extension attribute has an invalid name, or a value that is not a
-     *    string, integer or boolean.
-     *
-     * Lenient mode ($lenient = true) raises an Exception only for the `specversion`
-     * and `type` failures above; it never invents a required attribute. Every other
-     * malformed attribute is coerced to its default (so a non-string `subject`
-     * becomes null) and every invalid extension attribute is dropped, so a single
-     * bad optional attribute from an uncontrolled producer still yields a usable
-     * event. Pass $allowUnknownSpecversion to also survive a producer that has
-     * moved to a spec version this library does not know; the unknown version is
-     * kept verbatim on the returned event, where validate() will still reject it.
-     *
-     * Neither mode enforces the presence of `id` and `source`; call validate() for
-     * a full conformance check.
-     *
-     * @param  array<array-key, mixed>  $array
-     * @param  bool  $lenient  Coerce malformed optional attributes instead of throwing
-     * @param  bool  $allowUnknownSpecversion  Accept an unknown spec version (lenient mode only)
-     *
-     * @throws Exception
+     * @param array<array-key, mixed> $array
+     * @param bool $lenient Coerce malformed optional attributes to their default and drop invalid extension attributes instead of throwing
+     * @param bool $allowUnknownSpecversion Accept a spec version other than "1.0", which validate() will still reject (lenient mode only)
+     * @return self
+     * @throws InvalidArgumentException
      */
     public static function fromArray(array $array, bool $lenient = false, bool $allowUnknownSpecversion = false): self
     {
-        if (!isset($array['specversion'])) {
-            throw new Exception('Missing required field: specversion');
+        $specversion = self::readRequiredString($array, 'specversion');
+        $type = self::readRequiredString($array, 'type');
+        $source = self::readRequiredString($array, 'source');
+        $id = self::readRequiredString($array, 'id');
+
+        if ($specversion !== '1.0' && !($lenient && $allowUnknownSpecversion)) {
+            throw new InvalidArgumentException('Unsupported CloudEvents spec version: ' . $specversion);
         }
 
-        if (!is_string($array['specversion'])) {
-            throw new Exception('Attribute "specversion" must be a string');
-        }
-
-        $specversion = $array['specversion'];
-
-        if ($specversion !== self::SPECVERSION && !($lenient && $allowUnknownSpecversion)) {
-            throw new Exception('Unsupported CloudEvents spec version: '.$specversion);
-        }
-
-        if (!isset($array['type'])) {
-            throw new Exception('Missing required field: type');
-        }
-
-        if (!is_string($array['type'])) {
-            throw new Exception('Attribute "type" must be a string');
-        }
-
-        if ($array['type'] === '') {
-            throw new Exception('Missing required field: type');
-        }
-
-        $extensions = [];
-
-        foreach ($array as $name => $value) {
-            if (in_array((string) $name, self::RESERVED, true)) {
-                continue;
-            }
-
-            $extensions[$name] = $value;
-        }
+        $extensions = self::filterExtensions(
+            \array_diff_key($array, \array_flip(self::RESERVED_ATTRIBUTES)),
+            $lenient
+        );
 
         return new self(
+            type: $type,
+            source: $source,
+            id: $id,
             specversion: $specversion,
-            type: $array['type'],
-            source: self::readString($array, 'source', $lenient) ?? '',
             subject: self::readString($array, 'subject', $lenient),
-            id: self::readString($array, 'id', $lenient) ?? '',
-            time: self::readString($array, 'time', $lenient) ?? '',
-            datacontenttype: self::readString($array, 'datacontenttype', $lenient) ?? 'application/json',
-            // Absent data defaults to an empty array, but an explicit null is a
-            // valid payload and is kept as-is so a round trip stays lossless.
-            data: array_key_exists('data', $array) ? $array['data'] : [],
+            time: self::readString($array, 'time', $lenient),
+            datacontenttype: self::readString($array, 'datacontenttype', $lenient),
+            data: $array['data'] ?? null,
             dataschema: self::readString($array, 'dataschema', $lenient),
-            extensions: self::filterExtensions($extensions, $lenient),
+            extensions: $extensions
         );
     }
 
     /**
      * Convert CloudEvent to array
      *
-     * Every spec attribute is always present; a null value means unset, which the
-     * JSON format treats as equivalent to omitting the member. Extension attributes
-     * are emitted as top-level members alongside them.
+     * Optional attributes that are absent are omitted, since the spec
+     * does not allow null attribute values.
      *
      * @return array<array-key, mixed>
      */
     public function toArray(): array
     {
-        // The union operator rather than array_merge(), which would renumber a
-        // digits-only extension name such as "123" that PHP has cast to an int key.
-        return [
+        $array = [
             'specversion' => $this->specversion,
             'type' => $this->type,
             'source' => $this->source,
-            'subject' => $this->subject,
             'id' => $this->id,
-            'time' => $this->time,
-            'datacontenttype' => $this->datacontenttype,
-            'dataschema' => $this->dataschema,
-            'data' => $this->data,
-        ] + $this->extensions;
+        ];
+
+        if ($this->subject !== null) {
+            $array['subject'] = $this->subject;
+        }
+
+        if ($this->time !== null) {
+            $array['time'] = $this->time;
+        }
+
+        if ($this->datacontenttype !== null) {
+            $array['datacontenttype'] = $this->datacontenttype;
+        }
+
+        if ($this->dataschema !== null) {
+            $array['dataschema'] = $this->dataschema;
+        }
+
+        if ($this->data !== null) {
+            $array['data'] = $this->data;
+        }
+
+        return $array + $this->extensions;
+    }
+
+    /**
+     * Create CloudEvent from its JSON event format representation
+     *
+     * Binary payloads carried in the data_base64 member are decoded
+     * into data. JSON objects inside data are decoded as stdClass so
+     * that object and array payloads keep their JSON type when
+     * re-encoded (e.g., an empty object stays {} instead of []).
+     *
+     * @see https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/formats/json-format.md
+     *
+     * @param string $json
+     * @param bool $lenient See fromArray()
+     * @param bool $allowUnknownSpecversion See fromArray()
+     * @return self
+     * @throws InvalidArgumentException
+     */
+    public static function fromJson(string $json, bool $lenient = false, bool $allowUnknownSpecversion = false): self
+    {
+        try {
+            $raw = \json_decode($json, false, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            throw new InvalidArgumentException('Invalid CloudEvent JSON: ' . $e->getMessage(), 0, $e);
+        }
+
+        if (!$raw instanceof \stdClass) {
+            throw new InvalidArgumentException('CloudEvent JSON must decode to an object');
+        }
+
+        $decoded = \get_object_vars($raw);
+
+        if (\array_key_exists('data_base64', $decoded)) {
+            if (\array_key_exists('data', $decoded)) {
+                throw new InvalidArgumentException('CloudEvent must not contain both data and data_base64');
+            }
+
+            if (!\is_string($decoded['data_base64'])) {
+                throw new InvalidArgumentException('data_base64 must be a string');
+            }
+
+            $binary = \base64_decode($decoded['data_base64'], true);
+
+            if ($binary === false) {
+                throw new InvalidArgumentException('data_base64 must be valid Base64');
+            }
+
+            unset($decoded['data_base64']);
+            $decoded['data'] = $binary;
+        }
+
+        return self::fromArray($decoded, $lenient, $allowUnknownSpecversion);
+    }
+
+    /**
+     * Serialize the CloudEvent to the JSON event format
+     *
+     * String data that is not valid UTF-8 (and therefore cannot be
+     * carried in the data member) is emitted as the data_base64 member.
+     *
+     * @see https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/formats/json-format.md
+     *
+     * @param int $flags json_encode() flags
+     * @return string
+     * @throws InvalidArgumentException
+     */
+    public function toJson(int $flags = 0): string
+    {
+        $array = $this->toArray();
+
+        if (\is_string($this->data) && \preg_match('//u', $this->data) !== 1) {
+            unset($array['data']);
+            $array['data_base64'] = \base64_encode($this->data);
+        }
+
+        try {
+            return \json_encode($array, $flags | JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            throw new InvalidArgumentException('Unable to encode CloudEvent as JSON: ' . $e->getMessage(), 0, $e);
+        }
     }
 
     /**
      * Validate the CloudEvent
      *
-     * Enforces the four REQUIRED context attributes: `id`, `source`, `specversion`
-     * and `type`, where `id` must be a non-empty string and `source` a non-empty
-     * URI-reference.
-     *
-     * @throws Exception
+     * @return bool
+     * @throws InvalidArgumentException
      */
     public function validate(): bool
     {
-        if ($this->specversion !== self::SPECVERSION) {
-            throw new Exception('Unsupported CloudEvents spec version: '.$this->specversion);
+        if ($this->specversion !== '1.0') {
+            throw new InvalidArgumentException('Unsupported CloudEvents spec version: ' . $this->specversion);
         }
 
         if ($this->type === '') {
-            throw new Exception('Event type is required');
-        }
-
-        if ($this->id === '') {
-            throw new Exception('Event id is required');
+            throw new InvalidArgumentException('Event type is required');
         }
 
         if ($this->source === '') {
-            throw new Exception('Event source is required');
+            throw new InvalidArgumentException('Event source is required');
         }
 
-        if (!self::isUriReference($this->source)) {
-            throw new Exception('Event source must be a valid URI-reference');
+        if ($this->id === '') {
+            throw new InvalidArgumentException('Event id is required');
         }
+
+        if ($this->subject === '') {
+            throw new InvalidArgumentException('Event subject must not be empty when present');
+        }
+
+        if ($this->time === '') {
+            throw new InvalidArgumentException('Event time must not be empty when present');
+        }
+
+        if ($this->datacontenttype !== null && \trim($this->datacontenttype) === '') {
+            throw new InvalidArgumentException('Event datacontenttype must not be empty when present');
+        }
+
+        if ($this->dataschema === '') {
+            throw new InvalidArgumentException('Event dataschema must not be empty when present');
+        }
+
+        // Extension attributes need no checks here: the constructor
+        // validates them, and readonly keeps the invariant intact.
 
         return true;
     }
 
     /**
-     * Get a single extension attribute
+     * Read a REQUIRED string attribute
      *
-     * @return string|int|bool|null The $default when the attribute is not set
+     * @param array<array-key, mixed> $array
+     * @param string $name
+     * @return string
+     * @throws InvalidArgumentException When the attribute is absent, empty or not a string
      */
-    public function getExtension(string $name, string|int|bool|null $default = null): string|int|bool|null
+    private static function readRequiredString(array $array, string $name): string
     {
-        return $this->extensions[$name] ?? $default;
+        if (!isset($array[$name]) || $array[$name] === '') {
+            throw new InvalidArgumentException('Missing required field: ' . $name);
+        }
+
+        if (!\is_string($array[$name])) {
+            throw new InvalidArgumentException('Attribute "' . $name . '" must be a string');
+        }
+
+        return $array[$name];
     }
 
     /**
-     * Get all extension attributes, keyed by attribute name
+     * Read an OPTIONAL string attribute, treating an explicit null as unset
      *
-     * @return array<array-key, string|int|bool>
-     */
-    public function getExtensions(): array
-    {
-        return $this->extensions;
-    }
-
-    /**
-     * Return a copy with the given id
-     */
-    public function withId(string $id): self
-    {
-        return $this->with(id: $id);
-    }
-
-    /**
-     * Return a copy with the given time
-     *
-     * @param  string|null  $time  RFC 3339 timestamp, or null to stamp the current time
-     */
-    public function withTime(?string $time = null): self
-    {
-        return $this->with(time: $time ?? self::now());
-    }
-
-    /**
-     * Return a copy with the given source
-     */
-    public function withSource(string $source): self
-    {
-        return $this->with(source: $source);
-    }
-
-    /**
-     * Return a copy with the given subject
-     */
-    public function withSubject(?string $subject): self
-    {
-        return $this->with(subject: $subject, subjectSet: true);
-    }
-
-    /**
-     * Return a copy with the given data payload
-     */
-    public function withData(mixed $data): self
-    {
-        return $this->with(data: $data, dataSet: true);
-    }
-
-    /**
-     * Return a copy with the given extension attribute set
-     *
-     * @param  string  $name  Lowercase a-z and 0-9 only, and not a spec attribute name
-     * @param  string|int|bool|null  $value  A null value unsets the attribute
-     *
-     * @throws Exception on an invalid extension attribute name or value
-     */
-    public function withExtension(string $name, mixed $value): self
-    {
-        // array_replace() rather than array_merge(), which would renumber a
-        // digits-only name that PHP has cast to an int key
-        return $this->with(extensions: array_replace($this->extensions, [$name => $value]));
-    }
-
-    /**
-     * Build a copy of this event, overriding the given attributes
-     *
-     * @param  array<array-key, mixed>|null  $extensions
-     * @param  bool  $subjectSet  Whether $subject was given, since null is a meaningful value
-     * @param  bool  $dataSet  Whether $data was given, since null is a meaningful value
-     *
-     * @throws Exception
-     */
-    private function with(
-        ?string $type = null,
-        ?string $source = null,
-        ?string $subject = null,
-        ?string $id = null,
-        ?string $time = null,
-        ?string $datacontenttype = null,
-        mixed $data = null,
-        ?array $extensions = null,
-        bool $subjectSet = false,
-        bool $dataSet = false,
-    ): self {
-        return new self(
-            specversion: $this->specversion,
-            type: $type ?? $this->type,
-            source: $source ?? $this->source,
-            subject: $subjectSet ? $subject : $this->subject,
-            id: $id ?? $this->id,
-            time: $time ?? $this->time,
-            datacontenttype: $datacontenttype ?? $this->datacontenttype,
-            data: $dataSet ? $data : $this->data,
-            dataschema: $this->dataschema,
-            extensions: $extensions ?? $this->extensions,
-        );
-    }
-
-    /**
-     * Read a string attribute, treating an explicit null as unset
-     *
-     * @param  array<array-key, mixed>  $array
-     * @return string|null Null when the attribute is unset, or when it is malformed
-     *                     and $lenient is true
-     *
-     * @throws Exception when the attribute is malformed and $lenient is false
+     * @param array<array-key, mixed> $array
+     * @param string $name
+     * @param bool $lenient
+     * @return string|null Null when the attribute is unset, or when it is
+     *                     malformed and $lenient is true
+     * @throws InvalidArgumentException When the attribute is malformed and $lenient is false
      */
     private static function readString(array $array, string $name, bool $lenient): ?string
     {
@@ -372,56 +333,38 @@ class CloudEvent
             return null;
         }
 
-        if (!is_string($array[$name])) {
+        if (!\is_string($array[$name])) {
             if ($lenient) {
                 return null;
             }
 
-            throw new Exception('Attribute "'.$name.'" must be a string');
+            throw new InvalidArgumentException('Attribute "' . $name . '" must be a string');
         }
 
         return $array[$name];
     }
 
     /**
-     * Validate extension attribute names and values
+     * Drop unset extension attributes, and in lenient mode invalid ones too
      *
-     * Names are restricted to lowercase a-z and 0-9 by the spec. Values must be of a
-     * CloudEvents type; the type system has no floating-point type, and Binary, URI,
-     * URI-reference and Timestamp all serialize as strings, so what remains in JSON
-     * is a string, an integer or a boolean. An attribute whose value is null is
-     * treated as unset.
+     * Null values mean the attribute is unset. Anything else is passed
+     * through in strict mode for the constructor to validate.
      *
-     * @param  array<array-key, mixed>  $extensions
-     * @return array<array-key, string|int|bool>
-     *
-     * @throws Exception when an attribute is invalid and $lenient is false
+     * @param array<array-key, mixed> $extensions
+     * @param bool $lenient
+     * @return array<array-key, mixed>
      */
     private static function filterExtensions(array $extensions, bool $lenient): array
     {
         $filtered = [];
 
         foreach ($extensions as $name => $value) {
-            $name = (string) $name;
-
             if ($value === null) {
                 continue;
             }
 
-            if (!preg_match('/^[a-z0-9]+$/', $name) || in_array($name, self::RESERVED, true)) {
-                if ($lenient) {
-                    continue;
-                }
-
-                throw new Exception('Invalid extension attribute name: '.$name);
-            }
-
-            if (!is_string($value) && !is_int($value) && !is_bool($value)) {
-                if ($lenient) {
-                    continue;
-                }
-
-                throw new Exception('Invalid extension attribute value for "'.$name.'": must be a string, integer or boolean');
+            if ($lenient && self::extensionError((string) $name, $value) !== null) {
+                continue;
             }
 
             $filtered[$name] = $value;
@@ -431,82 +374,26 @@ class CloudEvent
     }
 
     /**
-     * Check whether a string is a syntactically valid RFC 3986 URI-reference
+     * Describe why an extension attribute is invalid
      *
-     * A URI-reference is either a URI or a relative reference, so "/services/db"
-     * and "user-service" are both fine, while "my service" and "http://[invalid]"
-     * are not. The check follows the RFC 3986 grammar rather than only screening
-     * characters, so a structurally malformed authority is rejected too.
-     *
-     * @see https://www.rfc-editor.org/rfc/rfc3986#appendix-A
+     * @param string $name
+     * @param mixed $value
+     * @return string|null The error message, or null when the attribute is valid
      */
-    private static function isUriReference(string $value): bool
+    private static function extensionError(string $name, mixed $value): ?string
     {
-        if (preg_match(self::uriReferencePattern(), $value) !== 1) {
-            return false;
+        if (!\preg_match('/^[a-z0-9]+$/', $name)) {
+            return 'Extension attribute name must contain only lowercase letters and digits: ' . $name;
         }
 
-        // Square brackets are only legal as the delimiters of an IP-literal host,
-        // so anything the grammar matched between them must be an IPv6 address or
-        // an IPvFuture literal.
-        if (preg_match_all('/\[([^\]]*)\]/', $value, $matches) === 0) {
-            return true;
+        if (\in_array($name, self::RESERVED_ATTRIBUTES, true)) {
+            return 'Extension attribute name conflicts with a core attribute: ' . $name;
         }
 
-        foreach ($matches[1] as $literal) {
-            $isIpV6 = filter_var($literal, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
-            $isIpVFuture = preg_match('/\Av[0-9A-Fa-f]++\.[A-Za-z0-9\-._~!$&\'()*+,;=:]++\z/', $literal) === 1;
-
-            if (!$isIpV6 && !$isIpVFuture) {
-                return false;
-            }
+        if (!\is_bool($value) && !\is_int($value) && !\is_string($value)) {
+            return 'Extension attribute "' . $name . '" must be a boolean, integer or string';
         }
 
-        return true;
-    }
-
-    /**
-     * Build the RFC 3986 URI-reference pattern
-     *
-     * Composed from the ABNF in appendix A, with the IP-literal left loose because
-     * isUriReference() validates its contents separately. Every repetition is
-     * possessive: the character sets of adjacent rules are disjoint, so no
-     * backtracking is ever useful, and a hostile `source` cannot make this pattern
-     * blow up.
-     */
-    private static function uriReferencePattern(): string
-    {
-        $unreserved = 'A-Za-z0-9\-._~';
-        $subDelims = '!$&\'()*+,;=';
-        $pctEncoded = '%[0-9A-Fa-f]{2}';
-
-        $pchar = "(?:[{$unreserved}{$subDelims}:@]|{$pctEncoded})";
-        $segment = "{$pchar}*+";
-        $segmentNz = "{$pchar}++";
-        // The first segment of a path-noscheme may not contain a colon, which would
-        // otherwise read as a scheme delimiter
-        $segmentNzNc = "(?:[{$unreserved}{$subDelims}@]|{$pctEncoded})++";
-
-        $scheme = '[A-Za-z][A-Za-z0-9+\-.]*+';
-        $userinfo = "(?:[{$unreserved}{$subDelims}:]|{$pctEncoded})*+";
-        $host = "(?:\[[^\]]*+\]|(?:[{$unreserved}{$subDelims}]|{$pctEncoded})*+)";
-        $authority = "(?:{$userinfo}@)?{$host}(?::[0-9]*+)?";
-
-        $pathAbempty = "(?:\/{$segment})*+";
-        $pathAbsolute = "\/(?:{$segmentNz}(?:\/{$segment})*+)?";
-        $pathRootless = "{$segmentNz}(?:\/{$segment})*+";
-        $pathNoscheme = "{$segmentNzNc}(?:\/{$segment})*+";
-
-        $hierPart = "(?:\/\/{$authority}{$pathAbempty}|{$pathAbsolute}|{$pathRootless}|)";
-        $relativePart = "(?:\/\/{$authority}{$pathAbempty}|{$pathAbsolute}|{$pathNoscheme}|)";
-
-        $queryOrFragment = "(?:{$pchar}|[\/?])*+";
-        $suffix = "(?:\?{$queryOrFragment})?(?:#{$queryOrFragment})?";
-
-        $uri = "{$scheme}:{$hierPart}{$suffix}";
-        $relativeRef = "{$relativePart}{$suffix}";
-
-        // \A and \z rather than ^ and $, which would let a trailing newline through
-        return "/\A(?:{$uri}|{$relativeRef})\z/";
+        return null;
     }
 }

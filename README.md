@@ -35,52 +35,28 @@ require __DIR__ . '/vendor/autoload.php';
 use Utopia\CloudEvents\CloudEvent;
 
 $event = new CloudEvent(
-    specversion: '1.0',
-    type: 'user.created',
-    source: 'user-service',
-    subject: 'user-123',
+    type: 'com.example.user.created',
+    source: 'https://example.com/user-service',
     id: uniqid(),
+    subject: 'user-123',
     time: CloudEvent::now(),
-    datacontenttype: 'application/json',
     data: [
         'userId' => '123',
         'email' => 'user@example.com',
         'name' => 'John Doe'
-    ],
-    dataschema: 'https://example.com/schemas/user.json',
-    extensions: ['traceparent' => '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01']
+    ]
 );
 ```
 
-`CloudEvent::now()` returns an RFC 3339 UTC timestamp with milliseconds
-(`2025-11-07T10:00:00.123Z`). Prefer it over `date('c')`, which renders UTC as
-`+00:00` and carries no sub-second part.
+When using the constructor, only `type`, `source` and `id` are required. All other attributes are optional. `datacontenttype` defaults to `application/json`; pass `null` to leave it unset. Arrays passed to `CloudEvent::fromArray()` must also carry an explicit `specversion`.
 
-### Building an event in stages
-
-The object is immutable, so every `with*()` method returns a new instance. This
-is handy when the transport assigns the identity of the event — the broker or
-log allocates the `id`, and `time` is stamped at publish:
-
-```php
-$event = new CloudEvent(type: 'user.created', source: 'user-service');
-
-$published = $event
-    ->withId($broker->nextId())
-    ->withSubject('user-123')
-    ->withData(['userId' => '123'])
-    ->withExtension('traceparent', $trace)
-    ->withTime(); // defaults to CloudEvent::now()
-```
-
-`withSource()` is available too. Passing `null` to `withExtension()` unsets that
-extension attribute.
+`CloudEvent::now()` returns the current time as an RFC 3339 UTC timestamp with millisecond precision (e.g., `2025-11-07T10:00:00.123Z`), ready to use as the `time` attribute.
 
 ### Converting to Array
 
 ```php
 $eventArray = $event->toArray();
-// Array with all CloudEvent fields
+// Array with all set CloudEvent attributes; absent optional attributes are omitted
 ```
 
 ### Creating from Array
@@ -88,8 +64,8 @@ $eventArray = $event->toArray();
 ```php
 $eventData = [
     'specversion' => '1.0',
-    'type' => 'user.created',
-    'source' => 'user-service',
+    'type' => 'com.example.user.created',
+    'source' => 'https://example.com/user-service',
     'subject' => 'user-123',
     'id' => 'unique-id',
     'time' => '2025-11-07T10:00:00Z',
@@ -103,84 +79,70 @@ $eventData = [
 $event = CloudEvent::fromArray($eventData);
 ```
 
-Any member that is not a spec attribute is carried as an extension attribute, and
-`toArray()` emits it again, so a round trip is lossless. Per the JSON format, an
-attribute whose value is `null` is treated as unset.
+Unknown keys are preserved as extension attributes.
 
-### Strict and lenient decoding
+### JSON Event Format
 
-`fromArray()` is strict by default: anything malformed raises
-`Utopia\CloudEvents\Exception`. That is what you want when decoding an event from
-a peer you control.
-
-When you consume a public stream, one bad optional attribute should not cost you
-the whole event. Lenient mode coerces malformed optional attributes to their
-default and drops invalid extension attributes:
+Serialize to and from the [CloudEvents JSON event format](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/formats/json-format.md), as used by HTTP structured mode and most message brokers:
 
 ```php
-// A non-string `subject` becomes null instead of raising
-$event = CloudEvent::fromArray($raw, lenient: true);
+$json = $event->toJson();
 
-// Also survive a producer that has moved to a spec version this library
-// does not know. The version is kept verbatim; validate() still rejects it.
-$event = CloudEvent::fromArray($raw, lenient: true, allowUnknownSpecversion: true);
+$event = CloudEvent::fromJson($json);
 ```
 
-Lenient mode never invents a required attribute: a missing `specversion` or a
-missing or empty `type` still raises. Neither mode enforces the presence of `id`
-and `source` — call `validate()` for a full conformance check.
+Binary payloads (string `data` that is not valid UTF-8) are automatically carried in the `data_base64` member.
+
+### Extension Attributes
+
+Extension attributes carry additional metadata such as distributed tracing context. They are passed at construction time and read directly from the readonly `extensions` property:
+
+```php
+$event = new CloudEvent(
+    type: 'com.example.user.created',
+    source: 'https://example.com/user-service',
+    id: uniqid(),
+    extensions: [
+        'traceparent' => '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+        'sequence' => 42,
+    ]
+);
+
+$event->extensions['traceparent'] ?? null; // '00-4bf9...'
+$event->extensions;                        // all extension attributes
+```
+
+Extension names must consist of lowercase letters and digits only, and values must be booleans, integers or strings. These rules are enforced at construction — an invalid extension attribute makes the constructor (and therefore `fromArray()` and `fromJson()`) throw, so a `CloudEvent` instance never carries invalid extensions. `CloudEvent` instances are immutable readonly value objects.
 
 ### Validating a CloudEvent
 
-`validate()` enforces the four REQUIRED context attributes: `id`, `source`,
-`specversion` and `type`. `source` is additionally checked against the RFC 3986
-URI-reference grammar, so a relative reference such as `user-service` or
-`/services/db` passes, while `my service` (unescaped space) and
-`http://[invalid]` (malformed authority) do not.
+`validate()` checks the event against the spec: the spec version is supported, `type`, `source` and `id` are non-empty, and optional attributes are non-empty when present. Extension attributes are already validated at construction.
 
 ```php
-use Utopia\CloudEvents\Exception as CloudEventException;
-
 try {
     $event->validate();
     echo "Event is valid!";
-} catch (CloudEventException $e) {
+} catch (InvalidArgumentException $e) {
     echo "Event validation failed: " . $e->getMessage();
 }
 ```
 
-Every malformed-input path throws `Utopia\CloudEvents\Exception`, which extends
-`InvalidArgumentException`.
-
 ## CloudEvent Properties
 
-The `CloudEvent` class supports the following properties according to the CloudEvents v1.0 specification:
+The `CloudEvent` class supports the following context attributes according to the CloudEvents v1.0 specification:
 
+- **id** (required): Identifier for the event, unique within the scope of the source
+- **source** (required): URI-reference identifying the context in which the event happened (e.g., "https://example.com/user-service")
 - **specversion** (required): CloudEvents specification version (default: "1.0")
-- **type** (required): Event type identifier (e.g., "user.created", "v1-stats-usage")
-- **source** (required): Context in which the event occurred, a non-empty URI-reference (e.g., service name)
-- **id** (required): Unique, non-empty identifier for the event
-- **subject** (optional): Subject of the event (e.g., project ID, user ID)
-- **time** (optional): Timestamp when the event occurred (RFC 3339 format)
-- **datacontenttype** (optional): Content type of the data field (default: "application/json")
-- **dataschema** (optional): URI identifying the schema that `data` adheres to
-- **data** (optional): Event payload. The JSON format leaves this unrestricted, so an array, string, number, boolean or `null` are all valid.
+- **type** (required): Event type identifier, ideally reverse-DNS prefixed (e.g., "com.example.user.created")
+- **datacontenttype** (optional): RFC 2046 content type of the data field (constructor default: "application/json")
+- **dataschema** (optional): URI identifying the schema that data adheres to
+- **subject** (optional): Subject of the event in the context of the source
+- **time** (optional): Timestamp of when the occurrence happened (RFC 3339 format)
+- **data** (optional): Event payload of any type
+- **extensions** (optional): Additional extension attributes (e.g., "traceparent")
 
-### Extension attributes
-
-An event may carry any number of extension context attributes, such as
-`traceparent`. Names are restricted by the spec to lowercase `a-z` and `0-9`, and
-values must be a string, integer or boolean — the CloudEvents type system has no
-floating-point type, and its Binary, URI and Timestamp types all serialize as
-strings. Anything else raises in strict mode, and is dropped in lenient mode.
-
-```php
-$event = $event->withExtension('traceparent', $trace);
-
-$event->getExtension('traceparent');           // the value, or null
-$event->getExtension('retrycount', 0);         // with a default
-$event->getExtensions();                       // all of them, keyed by name
-```
+Optional attributes are omitted from `toArray()` when absent, since the spec does not allow null attribute values. When present, they must not be empty.
 
 ## Use Cases
 
