@@ -623,7 +623,7 @@ class CloudEventTest extends TestCase
 
         $this->assertEquals('user.created', $event->type);
         $this->assertEquals((object) ['userId' => '123'], $event->data);
-        $this->assertEquals('00-abc-def-01', $event->getExtension('traceparent'));
+        $this->assertEquals('00-abc-def-01', $event->extensions['traceparent']);
     }
 
     public function testFromJsonPreservesJsonDataTypes(): void
@@ -700,7 +700,7 @@ class CloudEventTest extends TestCase
 
     public function testJsonRoundTrip(): void
     {
-        $original = (new CloudEvent(
+        $original = new CloudEvent(
             type: 'payment.processed',
             source: 'https://example.com/payments',
             id: 'event-123',
@@ -708,8 +708,9 @@ class CloudEventTest extends TestCase
             time: '2025-11-07T10:00:00Z',
             datacontenttype: 'application/json',
             dataschema: 'https://example.com/schemas/payment.json',
-            data: ['paymentId' => 'xyz']
-        ))->withExtension('traceparent', '00-abc-def-01');
+            data: ['paymentId' => 'xyz'],
+            extensions: ['traceparent' => '00-abc-def-01']
+        );
 
         $restored = CloudEvent::fromJson($original->toJson());
 
