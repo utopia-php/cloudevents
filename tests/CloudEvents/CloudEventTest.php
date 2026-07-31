@@ -431,6 +431,166 @@ class CloudEventTest extends TestCase
         $this->assertTrue($event->validate());
     }
 
+    public function testExtensions(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            extensions: [
+                'traceparent' => '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+                'sequence' => 42,
+                'sampled' => true,
+            ]
+        );
+
+        $this->assertEquals('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01', $event->extensions['traceparent']);
+        $this->assertEquals(42, $event->extensions['sequence']);
+        $this->assertTrue($event->extensions['sampled']);
+        $this->assertTrue($event->validate());
+    }
+
+    public function testExtensionsDefaultToEmpty(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id'
+        );
+
+        $this->assertEquals([], $event->extensions);
+    }
+
+    public function testToArrayIncludesExtensions(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            extensions: ['partitionkey' => 'shard-1']
+        );
+
+        $array = $event->toArray();
+
+        $this->assertEquals('shard-1', $array['partitionkey']);
+    }
+
+    public function testFromArrayCollectsExtensions(): void
+    {
+        $event = CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'traceparent' => '00-abc-def-01',
+            'sequence' => 7
+        ]);
+
+        $this->assertEquals(['traceparent' => '00-abc-def-01', 'sequence' => 7], $event->extensions);
+        $this->assertEquals('00-abc-def-01', $event->extensions['traceparent']);
+    }
+
+    public function testFromArrayRejectsInvalidExtensionName(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Extension attribute name must contain only lowercase letters and digits');
+
+        CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'Trace_Parent' => 'value'
+        ]);
+    }
+
+    public function testFromArrayRejectsInvalidExtensionValue(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Extension attribute "myext" must be a boolean, integer or string');
+
+        CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'myext' => ['nested' => 'array']
+        ]);
+    }
+
+    public function testFromArrayDropsNullExtensions(): void
+    {
+        $event = CloudEvent::fromArray([
+            'specversion' => '1.0',
+            'type' => 'test.event',
+            'source' => 'test-service',
+            'id' => 'test-id',
+            'traceparent' => null
+        ]);
+
+        $this->assertEquals([], $event->extensions);
+        $this->assertArrayNotHasKey('traceparent', $event->toArray());
+    }
+
+    public function testValidateRejectsInvalidExtensionName(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            extensions: ['Trace_Parent' => 'value']
+        );
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Extension attribute name must contain only lowercase letters and digits');
+
+        $event->validate();
+    }
+
+    public function testValidateRejectsReservedExtensionName(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            extensions: ['data' => 'value']
+        );
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Extension attribute name conflicts with a core attribute: data');
+
+        $event->validate();
+    }
+
+    public function testValidateRejectsInvalidExtensionValue(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            extensions: ['myext' => ['nested' => 'array']]
+        );
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Extension attribute "myext" must be a boolean, integer or string');
+
+        $event->validate();
+    }
+
+    public function testExtensionRoundTrip(): void
+    {
+        $original = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            extensions: ['traceparent' => '00-abc-def-01']
+        );
+
+        $restored = CloudEvent::fromArray($original->toArray());
+
+        $this->assertEquals($original->extensions, $restored->extensions);
+    }
+
     public function testRoundTrip(): void
     {
         $original = new CloudEvent(
