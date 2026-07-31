@@ -112,11 +112,11 @@ $event->extensions['traceparent'] ?? null; // '00-4bf9...'
 $event->extensions;                        // all extension attributes
 ```
 
-Extension names must consist of lowercase letters and digits only, and values must be booleans, integers or strings. `CloudEvent` instances are immutable readonly value objects.
+Extension names must consist of lowercase letters and digits only, and values must be booleans, integers or strings. These rules are enforced at construction — an invalid extension attribute makes the constructor (and therefore `fromArray()` and `fromJson()`) throw, so a `CloudEvent` instance never carries invalid extensions. `CloudEvent` instances are immutable readonly value objects.
 
 ### Validating a CloudEvent
 
-`validate()` checks the event against the spec: the spec version is supported, `type`, `source` and `id` are non-empty, optional attributes are non-empty when present, and extension attributes follow the naming and type rules.
+`validate()` checks the event against the spec: the spec version is supported, `type`, `source` and `id` are non-empty, and optional attributes are non-empty when present. Extension attributes are already validated at construction.
 
 ```php
 try {
