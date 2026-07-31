@@ -591,6 +591,139 @@ class CloudEventTest extends TestCase
         $this->assertEquals($original->extensions, $restored->extensions);
     }
 
+    public function testToJson(): void
+    {
+        $event = new CloudEvent(
+            type: 'user.created',
+            source: 'https://example.com/user-service',
+            id: 'event-1',
+            time: '2025-11-07T10:00:00Z',
+            datacontenttype: 'application/json',
+            data: ['userId' => '123']
+        );
+
+        $decoded = json_decode($event->toJson(), true);
+
+        $this->assertEquals([
+            'specversion' => '1.0',
+            'type' => 'user.created',
+            'source' => 'https://example.com/user-service',
+            'id' => 'event-1',
+            'time' => '2025-11-07T10:00:00Z',
+            'datacontenttype' => 'application/json',
+            'data' => ['userId' => '123']
+        ], $decoded);
+    }
+
+    public function testFromJson(): void
+    {
+        $json = '{"specversion":"1.0","type":"user.created","source":"user-service","id":"event-1","data":{"userId":"123"},"traceparent":"00-abc-def-01"}';
+
+        $event = CloudEvent::fromJson($json);
+
+        $this->assertEquals('user.created', $event->type);
+        $this->assertEquals((object) ['userId' => '123'], $event->data);
+        $this->assertEquals('00-abc-def-01', $event->getExtension('traceparent'));
+    }
+
+    public function testFromJsonPreservesJsonDataTypes(): void
+    {
+        $json = '{"specversion":"1.0","type":"t","source":"s","id":"i","data":{"empty":{},"list":[]}}';
+
+        $restored = CloudEvent::fromJson($json)->toJson();
+
+        $this->assertStringContainsString('"empty":{}', $restored);
+        $this->assertStringContainsString('"list":[]', $restored);
+    }
+
+    public function testFromJsonRejectsArrayRoot(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('CloudEvent JSON must decode to an object');
+
+        CloudEvent::fromJson('[{"specversion":"1.0","type":"t","source":"s","id":"i"}]');
+    }
+
+    public function testFromJsonInvalidJson(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid CloudEvent JSON');
+
+        CloudEvent::fromJson('{not json');
+    }
+
+    public function testFromJsonNonObject(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('CloudEvent JSON must decode to an object');
+
+        CloudEvent::fromJson('"just a string"');
+    }
+
+    public function testJsonBinaryDataRoundTrip(): void
+    {
+        $binary = "\x89PNG\r\n\x1a\n\x00\x01\x02\x80\xff";
+
+        $event = new CloudEvent(
+            type: 'image.uploaded',
+            source: 'storage',
+            id: 'event-1',
+            datacontenttype: 'image/png',
+            data: $binary
+        );
+
+        $decoded = json_decode($event->toJson(), true);
+
+        $this->assertArrayNotHasKey('data', $decoded);
+        $this->assertEquals(base64_encode($binary), $decoded['data_base64']);
+
+        $restored = CloudEvent::fromJson($event->toJson());
+
+        $this->assertEquals($binary, $restored->data);
+    }
+
+    public function testFromJsonRejectsDataAndDataBase64(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('CloudEvent must not contain both data and data_base64');
+
+        CloudEvent::fromJson('{"specversion":"1.0","type":"t","source":"s","id":"i","data":"x","data_base64":"eA=="}');
+    }
+
+    public function testFromJsonRejectsInvalidBase64(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('data_base64 must be valid Base64');
+
+        CloudEvent::fromJson('{"specversion":"1.0","type":"t","source":"s","id":"i","data_base64":"!!!not-base64!!!"}');
+    }
+
+    public function testJsonRoundTrip(): void
+    {
+        $original = (new CloudEvent(
+            type: 'payment.processed',
+            source: 'https://example.com/payments',
+            id: 'event-123',
+            subject: 'payment-xyz',
+            time: '2025-11-07T10:00:00Z',
+            datacontenttype: 'application/json',
+            dataschema: 'https://example.com/schemas/payment.json',
+            data: ['paymentId' => 'xyz']
+        ))->withExtension('traceparent', '00-abc-def-01');
+
+        $restored = CloudEvent::fromJson($original->toJson());
+
+        $this->assertEquals($original->type, $restored->type);
+        $this->assertEquals($original->source, $restored->source);
+        $this->assertEquals($original->id, $restored->id);
+        $this->assertEquals($original->subject, $restored->subject);
+        $this->assertEquals($original->time, $restored->time);
+        $this->assertEquals($original->datacontenttype, $restored->datacontenttype);
+        $this->assertEquals($original->dataschema, $restored->dataschema);
+        $this->assertEquals($original->extensions, $restored->extensions);
+        $this->assertJsonStringEqualsJsonString($original->toJson(), $restored->toJson());
+    }
+
     public function testRoundTrip(): void
     {
         $original = new CloudEvent(
