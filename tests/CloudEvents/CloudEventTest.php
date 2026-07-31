@@ -260,6 +260,50 @@ class CloudEventTest extends TestCase
         $this->assertEquals(42, $event->data);
     }
 
+    public function testDataschema(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            dataschema: 'https://example.com/schemas/user.json'
+        );
+
+        $this->assertEquals('https://example.com/schemas/user.json', $event->dataschema);
+        $this->assertEquals('https://example.com/schemas/user.json', $event->toArray()['dataschema']);
+        $this->assertTrue($event->validate());
+
+        $restored = CloudEvent::fromArray($event->toArray());
+        $this->assertEquals($event->dataschema, $restored->dataschema);
+    }
+
+    public function testDataschemaAbsent(): void
+    {
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id'
+        );
+
+        $this->assertNull($event->dataschema);
+        $this->assertArrayNotHasKey('dataschema', $event->toArray());
+    }
+
+    public function testValidateEmptyDataschema(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Event dataschema must not be empty when present');
+
+        $event = new CloudEvent(
+            type: 'test.event',
+            source: 'test-service',
+            id: 'test-id',
+            dataschema: ''
+        );
+
+        $event->validate();
+    }
+
     public function testValidateRejectsBlankDatacontenttype(): void
     {
         $this->expectException(InvalidArgumentException::class);
