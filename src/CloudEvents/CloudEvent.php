@@ -19,8 +19,8 @@ class CloudEvent
      * @param string $specversion CloudEvents spec version (default: "1.0")
      * @param string|null $subject Optional subject of the event in the context of the source
      * @param string|null $time Optional event timestamp in RFC 3339 format
-     * @param string $datacontenttype Content type of data (default: "application/json")
-     * @param array<string, mixed> $data Event data payload
+     * @param string|null $datacontenttype Optional content type of data (RFC 2046, e.g., "application/json")
+     * @param mixed $data Optional event payload of any type
      */
     public function __construct(
         public readonly string $type,
@@ -29,8 +29,8 @@ class CloudEvent
         public readonly string $specversion = '1.0',
         public readonly ?string $subject = null,
         public readonly ?string $time = null,
-        public readonly string $datacontenttype = 'application/json',
-        public readonly array $data = []
+        public readonly ?string $datacontenttype = null,
+        public readonly mixed $data = null
     ) {
     }
 
@@ -60,28 +60,45 @@ class CloudEvent
             specversion: $array['specversion'],
             subject: $array['subject'] ?? null,
             time: $array['time'] ?? null,
-            datacontenttype: $array['datacontenttype'] ?? 'application/json',
-            data: $array['data'] ?? []
+            datacontenttype: $array['datacontenttype'] ?? null,
+            data: $array['data'] ?? null
         );
     }
 
     /**
      * Convert CloudEvent to array
      *
+     * Optional attributes that are absent are omitted, since the spec
+     * does not allow null attribute values.
+     *
      * @return array<string, mixed>
      */
     public function toArray(): array
     {
-        return [
+        $array = [
             'specversion' => $this->specversion,
             'type' => $this->type,
             'source' => $this->source,
-            'subject' => $this->subject,
             'id' => $this->id,
-            'time' => $this->time,
-            'datacontenttype' => $this->datacontenttype,
-            'data' => $this->data
         ];
+
+        if ($this->subject !== null) {
+            $array['subject'] = $this->subject;
+        }
+
+        if ($this->time !== null) {
+            $array['time'] = $this->time;
+        }
+
+        if ($this->datacontenttype !== null) {
+            $array['datacontenttype'] = $this->datacontenttype;
+        }
+
+        if ($this->data !== null) {
+            $array['data'] = $this->data;
+        }
+
+        return $array;
     }
 
     /**
@@ -114,6 +131,10 @@ class CloudEvent
 
         if ($this->time === '') {
             throw new InvalidArgumentException('Event time must not be empty when present');
+        }
+
+        if ($this->datacontenttype !== null && \trim($this->datacontenttype) === '') {
+            throw new InvalidArgumentException('Event datacontenttype must not be empty when present');
         }
 
         return true;
