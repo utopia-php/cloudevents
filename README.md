@@ -35,11 +35,10 @@ require __DIR__ . '/vendor/autoload.php';
 use Utopia\CloudEvents\CloudEvent;
 
 $event = new CloudEvent(
-    specversion: '1.0',
-    type: 'user.created',
-    source: 'user-service',
-    subject: 'user-123',
+    type: 'com.example.user.created',
+    source: 'https://example.com/user-service',
     id: uniqid(),
+    subject: 'user-123',
     time: date('c'),
     datacontenttype: 'application/json',
     data: [
@@ -50,11 +49,13 @@ $event = new CloudEvent(
 );
 ```
 
+When using the constructor, only `type`, `source` and `id` are required. All other attributes are optional. Arrays passed to `CloudEvent::fromArray()` must also carry an explicit `specversion`.
+
 ### Converting to Array
 
 ```php
 $eventArray = $event->toArray();
-// Array with all CloudEvent fields
+// Array with all set CloudEvent attributes; absent optional attributes are omitted
 ```
 
 ### Creating from Array
@@ -62,8 +63,8 @@ $eventArray = $event->toArray();
 ```php
 $eventData = [
     'specversion' => '1.0',
-    'type' => 'user.created',
-    'source' => 'user-service',
+    'type' => 'com.example.user.created',
+    'source' => 'https://example.com/user-service',
     'subject' => 'user-123',
     'id' => 'unique-id',
     'time' => '2025-11-07T10:00:00Z',
@@ -77,7 +78,44 @@ $eventData = [
 $event = CloudEvent::fromArray($eventData);
 ```
 
+Unknown keys are preserved as extension attributes.
+
+### JSON Event Format
+
+Serialize to and from the [CloudEvents JSON event format](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/formats/json-format.md), as used by HTTP structured mode and most message brokers:
+
+```php
+$json = $event->toJson();
+
+$event = CloudEvent::fromJson($json);
+```
+
+Binary payloads (string `data` that is not valid UTF-8) are automatically carried in the `data_base64` member.
+
+### Extension Attributes
+
+Extension attributes carry additional metadata such as distributed tracing context. They are passed at construction time and read directly from the readonly `extensions` property:
+
+```php
+$event = new CloudEvent(
+    type: 'com.example.user.created',
+    source: 'https://example.com/user-service',
+    id: uniqid(),
+    extensions: [
+        'traceparent' => '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+        'sequence' => 42,
+    ]
+);
+
+$event->extensions['traceparent'] ?? null; // '00-4bf9...'
+$event->extensions;                        // all extension attributes
+```
+
+Extension names must consist of lowercase letters and digits only, and values must be booleans, integers or strings. `CloudEvent` instances are immutable readonly value objects.
+
 ### Validating a CloudEvent
+
+`validate()` checks the event against the spec: the spec version is supported, `type`, `source` and `id` are non-empty, optional attributes are non-empty when present, and extension attributes follow the naming and type rules.
 
 ```php
 try {
@@ -90,19 +128,20 @@ try {
 
 ## CloudEvent Properties
 
-The `CloudEvent` class supports the following properties according to the CloudEvents v1.0 specification:
+The `CloudEvent` class supports the following context attributes according to the CloudEvents v1.0 specification:
 
+- **id** (required): Identifier for the event, unique within the scope of the source
+- **source** (required): URI-reference identifying the context in which the event happened (e.g., "https://example.com/user-service")
 - **specversion** (required): CloudEvents specification version (default: "1.0")
-- **type** (required): Event type identifier (e.g., "user.created", "v1-stats-usage")
-- **source** (required): Context in which the event occurred (e.g., service name)
-- **subject** (optional): Subject of the event (e.g., project ID, user ID)
-- **id** (required): Unique identifier for the event
-- **time** (required): Timestamp when the event occurred (RFC3339 format)
-- **datacontenttype** (optional): Content type of the data field (default: "application/json")
-- **dataschema** (optional): URI identifying the schema that the data field adheres to
-- **data** (required): Event payload as an array
+- **type** (required): Event type identifier, ideally reverse-DNS prefixed (e.g., "com.example.user.created")
+- **datacontenttype** (optional): RFC 2046 content type of the data field (e.g., "application/json")
+- **dataschema** (optional): URI identifying the schema that data adheres to
+- **subject** (optional): Subject of the event in the context of the source
+- **time** (optional): Timestamp of when the occurrence happened (RFC 3339 format)
+- **data** (optional): Event payload of any type
+- **extensions** (optional): Additional extension attributes (e.g., "traceparent")
 
-Optional attributes are omitted from `toArray()` when absent, since the spec does not allow null attribute values. When present, they must not be empty — `validate()` rejects an empty `dataschema`.
+Optional attributes are omitted from `toArray()` when absent, since the spec does not allow null attribute values. When present, they must not be empty.
 
 ## Use Cases
 
