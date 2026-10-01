@@ -1,13 +1,129 @@
 <?php
 
-namespace Tests\Unit\CloudEvents;
+namespace Utopia\CloudEvents\Tests;
 
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Utopia\CloudEvents\CloudEvent;
 
 class CloudEventTest extends TestCase
 {
+    /**
+     * The smallest event every refusal below starts from: each case changes
+     * one attribute, so a refusal can only come from that attribute.
+     */
+    private const array EVENT = [
+        'specversion' => '1.0',
+        'type' => 'test.event',
+        'source' => 'test-service',
+        'id' => 'test-id',
+    ];
+
+    private const string JSON = '{"specversion":"1.0","type":"t","source":"s","id":"i"}';
+
+    /**
+     * @return array<string, array{array<string, mixed>, string}>
+     */
+    public static function malformedArrays(): array
+    {
+        $without = static fn (string $field): array => \array_diff_key(self::EVENT, [$field => true]);
+
+        return [
+            'missing specversion' => [$without('specversion'), 'Missing required field: specversion'],
+            'unsupported specversion' => [['specversion' => '2.0'] + self::EVENT, 'Unsupported CloudEvents spec version: 2.0'],
+            'missing type' => [$without('type'), 'Missing required field: type'],
+            'empty type' => [['type' => ''] + self::EVENT, 'Missing required field: type'],
+            'missing source' => [$without('source'), 'Missing required field: source'],
+            'empty source' => [['source' => ''] + self::EVENT, 'Missing required field: source'],
+            'missing id' => [$without('id'), 'Missing required field: id'],
+            'extension name with capitals and underscore' => [self::EVENT + ['Trace_Parent' => 'value'], 'Extension attribute name must contain only lowercase letters and digits'],
+            'extension value that is an array' => [self::EVENT + ['myext' => ['nested' => 'array']], 'Extension attribute "myext" must be a boolean, integer or string'],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $malformed
+     */
+    #[DataProvider('malformedArrays')]
+    public function testFromArrayRefusesOnlyTheMalformedAttribute(array $malformed, string $message): void
+    {
+        $this->assertSame(self::EVENT, CloudEvent::fromArray(self::EVENT)->toArray());
+        $this->assertRefused(static fn () => CloudEvent::fromArray($malformed), $message);
+    }
+
+    /**
+     * @return array<string, array{array{specversion?: string, type?: string, source?: string, id?: string, subject?: string, dataschema?: string, datacontenttype?: string}, string}>
+     */
+    public static function invalidEvents(): array
+    {
+        return [
+            'unsupported specversion' => [['specversion' => '2.0'], 'Unsupported CloudEvents spec version: 2.0'],
+            'empty type' => [['type' => ''], 'Event type is required'],
+            'empty source' => [['source' => ''], 'Event source is required'],
+            'empty id' => [['id' => ''], 'Event id is required'],
+            'empty subject' => [['subject' => ''], 'Event subject must not be empty when present'],
+            'empty dataschema' => [['dataschema' => ''], 'Event dataschema must not be empty when present'],
+            'blank datacontenttype' => [['datacontenttype' => '   '], 'Event datacontenttype must not be empty when present'],
+        ];
+    }
+
+    /**
+     * @param array{specversion?: string, type?: string, source?: string, id?: string, subject?: string, dataschema?: string, datacontenttype?: string} $change
+     */
+    #[DataProvider('invalidEvents')]
+    public function testValidateRefusesOnlyTheInvalidAttribute(array $change, string $message): void
+    {
+        $this->assertTrue((new CloudEvent(...self::EVENT))->validate());
+
+        $event = new CloudEvent(...($change + self::EVENT));
+
+        $this->assertRefused($event->validate(...), $message);
+    }
+
+    /**
+     * @return array<string, array{array<string, mixed>, string}>
+     */
+    public static function invalidExtensions(): array
+    {
+        return [
+            'name with capitals and underscore' => [['Trace_Parent' => 'value'], 'Extension attribute name must contain only lowercase letters and digits'],
+            'name of a core attribute' => [['data' => 'value'], 'Extension attribute name conflicts with a core attribute: data'],
+            'value that is an array' => [['myext' => ['nested' => 'array']], 'Extension attribute "myext" must be a boolean, integer or string'],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $extensions
+     */
+    #[DataProvider('invalidExtensions')]
+    public function testConstructorRefusesOnlyTheInvalidExtension(array $extensions, string $message): void
+    {
+        $this->assertSame(['traceparent' => 'value'], (new CloudEvent(...self::EVENT, extensions: ['traceparent' => 'value']))->extensions);
+        $this->assertRefused(static fn () => new CloudEvent(...self::EVENT, extensions: $extensions), $message);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function malformedJson(): array
+    {
+        return [
+            'invalid JSON' => ['{not json', 'Invalid CloudEvent JSON'],
+            'array root' => ['[' . self::JSON . ']', 'CloudEvent JSON must decode to an object'],
+            'string root' => ['"just a string"', 'CloudEvent JSON must decode to an object'],
+            'data and data_base64' => ['{"specversion":"1.0","type":"t","source":"s","id":"i","data":"x","data_base64":"eA=="}', 'CloudEvent must not contain both data and data_base64'],
+            'invalid data_base64' => ['{"specversion":"1.0","type":"t","source":"s","id":"i","data_base64":"!!!not-base64!!!"}', 'data_base64 must be valid Base64'],
+        ];
+    }
+
+    #[DataProvider('malformedJson')]
+    public function testFromJsonRefusesOnlyTheMalformedDocument(string $json, string $message): void
+    {
+        $this->assertSame('i', CloudEvent::fromJson(self::JSON)->id);
+        $this->assertRefused(static fn () => CloudEvent::fromJson($json), $message);
+    }
+
     public function testConstructor(): void
     {
         $event = new CloudEvent(
@@ -104,67 +220,6 @@ class CloudEventTest extends TestCase
         $this->assertNull($event->data);
     }
 
-    public function testFromArrayMissingSpecversion(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Missing required field: specversion');
-
-        CloudEvent::fromArray([
-            'type' => 'test.event',
-            'source' => 'test-service'
-        ]);
-    }
-
-    public function testFromArrayInvalidSpecversion(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Unsupported CloudEvents spec version: 2.0');
-
-        CloudEvent::fromArray([
-            'specversion' => '2.0',
-            'type' => 'test.event',
-            'source' => 'test-service',
-            'id' => 'test-id'
-        ]);
-    }
-
-    public function testFromArrayMissingSource(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Missing required field: source');
-
-        CloudEvent::fromArray([
-            'specversion' => '1.0',
-            'type' => 'test.event',
-            'id' => 'test-id'
-        ]);
-    }
-
-    public function testFromArrayMissingId(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Missing required field: id');
-
-        CloudEvent::fromArray([
-            'specversion' => '1.0',
-            'type' => 'test.event',
-            'source' => 'test-service'
-        ]);
-    }
-
-    public function testFromArrayEmptySource(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Missing required field: source');
-
-        CloudEvent::fromArray([
-            'specversion' => '1.0',
-            'type' => 'test.event',
-            'source' => '',
-            'id' => 'test-id'
-        ]);
-    }
-
     public function testFromArrayAcceptsZeroStringType(): void
     {
         $event = CloudEvent::fromArray([
@@ -175,29 +230,6 @@ class CloudEventTest extends TestCase
         ]);
 
         $this->assertEquals('0', $event->type);
-    }
-
-    public function testFromArrayMissingType(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Missing required field: type');
-
-        CloudEvent::fromArray([
-            'specversion' => '1.0',
-            'source' => 'test-service'
-        ]);
-    }
-
-    public function testFromArrayEmptyType(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Missing required field: type');
-
-        CloudEvent::fromArray([
-            'specversion' => '1.0',
-            'type' => '',
-            'source' => 'test-service'
-        ]);
     }
 
     public function testToArray(): void
@@ -302,36 +334,6 @@ class CloudEventTest extends TestCase
         $this->assertArrayNotHasKey('dataschema', $event->toArray());
     }
 
-    public function testValidateEmptyDataschema(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Event dataschema must not be empty when present');
-
-        $event = new CloudEvent(
-            type: 'test.event',
-            source: 'test-service',
-            id: 'test-id',
-            dataschema: ''
-        );
-
-        $event->validate();
-    }
-
-    public function testValidateRejectsBlankDatacontenttype(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Event datacontenttype must not be empty when present');
-
-        $event = new CloudEvent(
-            type: 'test.event',
-            source: 'test-service',
-            id: 'test-id',
-            datacontenttype: '   '
-        );
-
-        $event->validate();
-    }
-
     public function testFromArrayDoesNotFabricateDatacontenttype(): void
     {
         $event = CloudEvent::fromArray([
@@ -356,81 +358,6 @@ class CloudEventTest extends TestCase
         );
 
         $this->assertTrue($event->validate());
-    }
-
-    public function testValidateInvalidSpecversion(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Unsupported CloudEvents spec version: 2.0');
-
-        $event = new CloudEvent(
-            specversion: '2.0',
-            type: 'test.event',
-            source: 'test-service',
-            id: 'test-id',
-            time: '2025-11-07T10:00:00Z'
-        );
-
-        $event->validate();
-    }
-
-    public function testValidateEmptyType(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Event type is required');
-
-        $event = new CloudEvent(
-            specversion: '1.0',
-            type: '',
-            source: 'test-service',
-            id: 'test-id',
-            time: '2025-11-07T10:00:00Z'
-        );
-
-        $event->validate();
-    }
-
-    public function testValidateEmptySource(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Event source is required');
-
-        $event = new CloudEvent(
-            type: 'test.event',
-            source: '',
-            id: 'test-id'
-        );
-
-        $event->validate();
-    }
-
-    public function testValidateEmptyId(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Event id is required');
-
-        $event = new CloudEvent(
-            type: 'test.event',
-            source: 'test-service',
-            id: ''
-        );
-
-        $event->validate();
-    }
-
-    public function testValidateEmptySubject(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Event subject must not be empty when present');
-
-        $event = new CloudEvent(
-            type: 'test.event',
-            source: 'test-service',
-            id: 'test-id',
-            subject: ''
-        );
-
-        $event->validate();
     }
 
     public function testValidateWithoutTime(): void
@@ -522,34 +449,6 @@ class CloudEventTest extends TestCase
         $this->assertEquals('00-abc-def-01', $event->extensions['traceparent']);
     }
 
-    public function testFromArrayRejectsInvalidExtensionName(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Extension attribute name must contain only lowercase letters and digits');
-
-        CloudEvent::fromArray([
-            'specversion' => '1.0',
-            'type' => 'test.event',
-            'source' => 'test-service',
-            'id' => 'test-id',
-            'Trace_Parent' => 'value'
-        ]);
-    }
-
-    public function testFromArrayRejectsInvalidExtensionValue(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Extension attribute "myext" must be a boolean, integer or string');
-
-        CloudEvent::fromArray([
-            'specversion' => '1.0',
-            'type' => 'test.event',
-            'source' => 'test-service',
-            'id' => 'test-id',
-            'myext' => ['nested' => 'array']
-        ]);
-    }
-
     public function testFromArrayDropsNullExtensions(): void
     {
         $event = CloudEvent::fromArray([
@@ -562,45 +461,6 @@ class CloudEventTest extends TestCase
 
         $this->assertEquals([], $event->extensions);
         $this->assertArrayNotHasKey('traceparent', $event->toArray());
-    }
-
-    public function testConstructorRejectsInvalidExtensionName(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Extension attribute name must contain only lowercase letters and digits');
-
-        new CloudEvent(
-            type: 'test.event',
-            source: 'test-service',
-            id: 'test-id',
-            extensions: ['Trace_Parent' => 'value']
-        );
-    }
-
-    public function testConstructorRejectsReservedExtensionName(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Extension attribute name conflicts with a core attribute: data');
-
-        new CloudEvent(
-            type: 'test.event',
-            source: 'test-service',
-            id: 'test-id',
-            extensions: ['data' => 'value']
-        );
-    }
-
-    public function testConstructorRejectsInvalidExtensionValue(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Extension attribute "myext" must be a boolean, integer or string');
-
-        new CloudEvent(
-            type: 'test.event',
-            source: 'test-service',
-            id: 'test-id',
-            extensions: ['myext' => ['nested' => 'array']]
-        );
     }
 
     public function testExtensionRoundTrip(): void
@@ -662,30 +522,6 @@ class CloudEventTest extends TestCase
         $this->assertStringContainsString('"list":[]', $restored);
     }
 
-    public function testFromJsonRejectsArrayRoot(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('CloudEvent JSON must decode to an object');
-
-        CloudEvent::fromJson('[{"specversion":"1.0","type":"t","source":"s","id":"i"}]');
-    }
-
-    public function testFromJsonInvalidJson(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid CloudEvent JSON');
-
-        CloudEvent::fromJson('{not json');
-    }
-
-    public function testFromJsonNonObject(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('CloudEvent JSON must decode to an object');
-
-        CloudEvent::fromJson('"just a string"');
-    }
-
     public function testJsonBinaryDataRoundTrip(): void
     {
         $binary = "\x89PNG\r\n\x1a\n\x00\x01\x02\x80\xff";
@@ -706,22 +542,6 @@ class CloudEventTest extends TestCase
         $restored = CloudEvent::fromJson($event->toJson());
 
         $this->assertEquals($binary, $restored->data);
-    }
-
-    public function testFromJsonRejectsDataAndDataBase64(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('CloudEvent must not contain both data and data_base64');
-
-        CloudEvent::fromJson('{"specversion":"1.0","type":"t","source":"s","id":"i","data":"x","data_base64":"eA=="}');
-    }
-
-    public function testFromJsonRejectsInvalidBase64(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('data_base64 must be valid Base64');
-
-        CloudEvent::fromJson('{"specversion":"1.0","type":"t","source":"s","id":"i","data_base64":"!!!not-base64!!!"}');
     }
 
     public function testJsonRoundTrip(): void
@@ -775,5 +595,18 @@ class CloudEventTest extends TestCase
         $this->assertEquals($original->time, $restored->time);
         $this->assertEquals($original->datacontenttype, $restored->datacontenttype);
         $this->assertEquals($original->data, $restored->data);
+    }
+
+    private function assertRefused(callable $call, string $message): void
+    {
+        try {
+            $call();
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString($message, $exception->getMessage());
+
+            return;
+        }
+
+        $this->fail("expected the call to be refused with: {$message}");
     }
 }

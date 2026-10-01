@@ -1,0 +1,43 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Parameter \#1 \$array of static method Utopia\\CloudEvents\\CloudEvent\:\:fromArray\(\) expects array\<string, mixed\>, array given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/CloudEvent.php
+
+		-
+			message: '#^Parameter \$datacontenttype of class Utopia\\CloudEvents\\CloudEvent constructor expects string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/CloudEvent.php
+
+		-
+			message: '#^Parameter \$dataschema of class Utopia\\CloudEvents\\CloudEvent constructor expects string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/CloudEvent.php
+
+		-
+			message: '#^Parameter \$subject of class Utopia\\CloudEvents\\CloudEvent constructor expects string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/CloudEvent.php
+
+		-
+			message: '#^Parameter \$time of class Utopia\\CloudEvents\\CloudEvent constructor expects string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/CloudEvent.php
+
+		-
+			message: '#^Cannot access offset ''data_base64'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/CloudEventTest.php
+
+		-
+			message: '#^Parameter \#2 \$array of method PHPUnit\\Framework\\Assert\:\:assertArrayNotHasKey\(\) expects array\<mixed\>\|ArrayAccess\<\(int\|string\), covariant mixed\>, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/CloudEventTest.php

@@ -1,6 +1,8 @@
 # Utopia CloudEvents
 
-[![Tests](https://github.com/utopia-php/cloudevents/actions/workflows/tests.yml/badge.svg)](https://github.com/utopia-php/cloudevents/actions/workflows/tests.yml)
+> [!IMPORTANT]
+> This repository is a read-only mirror of `packages/cloudevents` in Appwrite's private Cloud repository (appwrite-labs/cloud). Development happens there, so pull requests and issues opened here are closed automatically.
+
 [![Packagist Version](https://img.shields.io/packagist/v/utopia-php/cloudevents.svg)](https://packagist.org/packages/utopia-php/cloudevents)
 ![Packagist Downloads](https://img.shields.io/packagist/dt/utopia-php/cloudevents.svg)
 [![Discord](https://img.shields.io/discord/564160730845151244)](https://appwrite.io/discord)
@@ -154,10 +156,10 @@ Optional attributes are omitted from `toArray()` when absent, since the spec doe
 
 ## Development
 
-- Install dependencies: `composer install`
-- Static analysis: `composer check`
-- Coding standards: `composer lint` (use `composer format` to auto-fix)
-- Tests: `composer test`
+The package is developed in `packages/cloudevents` of appwrite-labs/cloud, which supplies its toolchain. From that repository's root:
+
+- Pint, PHPStan and Rector: `bin/monorepo check cloudevents` (add `--fix` to apply fixes)
+- Tests: `bin/monorepo test cloudevents`
 
 ## License
 
